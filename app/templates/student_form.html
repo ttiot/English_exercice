@@ -1,0 +1,23 @@
+{% extends 'base.html' %}
+{% block title %}Créer un profil élève{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Créer un nouveau profil élève</h2>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label for="first_name">Prénom *</label>
+      <input id="first_name" name="first_name" required placeholder="Ex. Léa" />
+
+      <label for="last_name">Nom</label>
+      <input id="last_name" name="last_name" placeholder="Ex. Martin" />
+
+      <label for="age">Âge</label>
+      <input id="age" name="age" type="number" min="6" max="13" />
+
+      <label for="goals">Objectifs</label>
+      <textarea id="goals" name="goals" rows="3" placeholder="Ex. Réviser les nombres, travailler le vocabulaire..."></textarea>
+
+      <button class="btn btn-primary" type="submit">Créer le profil</button>
+    </form>
+  </div>
+{% endblock %}

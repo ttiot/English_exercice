@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% block title %}Profil de {{ student.full_name() }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>{{ student.full_name() }}</h2>
+    <p>
+      {% if student.age %}<strong>Âge :</strong> {{ student.age }} ans<br />{% endif %}
+      {% if student.goals %}<strong>Objectifs :</strong> {{ student.goals }}{% endif %}
+    </p>
+    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
+      <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Progression par compétence</h3>
+    {% if progress %}
+      <div class="grid">
+        {% for category, stats in progress.items() %}
+          <div class="stats-card">
+            <h3>{{ category | replace('_', ' ') | capitalize }}</h3>
+            <p>{{ stats.correct }} bonnes réponses sur {{ stats.total }} ({{ '%.0f'|format(stats.rate) }}%)</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>Pas encore de progression enregistrée. Lance la première session !</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Sessions passées</h3>
+    {% if sessions %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Score</th>
+            <th>Temps</th>
+            <th>Détails</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in sessions %}
+            <tr>
+              <td>{{ session.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td>{{ session.correct_answers }}/{{ session.total_questions }}</td>
+              <td>
+                {% if session.time_limit_minutes %}
+                  {{ session.time_limit_minutes }} min
+                {% else %}
+                  Sans limite
+                {% endif %}
+              </td>
+              <td><a href="{{ url_for('main.session_summary', session_id=session.id) }}">Voir la correction</a></td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>Aucune session pour le moment.</p>
+    {% endif %}
+  </div>
+{% endblock %}

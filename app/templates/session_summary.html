@@ -1,0 +1,30 @@
+{% extends 'base.html' %}
+{% block title %}Résultats de la session{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Résultats de la session</h2>
+    <p>
+      Score : <strong>{{ session_obj.correct_answers }}/{{ session_obj.total_questions }}</strong>
+      ({{ '%.0f'|format(session_obj.completion_rate()) }}%)
+    </p>
+    <p>Complétée le {{ session_obj.completed_at.strftime('%d/%m/%Y %H:%M') if session_obj.completed_at else 'en cours' }}</p>
+    <a class="btn btn-primary" href="{{ url_for('main.view_student', student_id=session_obj.student_id) }}">Retour au profil</a>
+  </div>
+
+  <div class="card">
+    <h3>Correction</h3>
+    {% for exercise in session_obj.exercises %}
+      <div class="question">
+        <h4>Question {{ loop.index }}</h4>
+        <p>{{ exercise.prompt }}</p>
+        <p>Ta réponse : <strong>{{ exercise.student_answer or 'Non renseignée' }}</strong></p>
+        <p>Bonne réponse : <strong>{{ exercise.correct_answer }}</strong></p>
+        {% if exercise.is_correct %}
+          <span class="badge">✅ Bravo !</span>
+        {% else %}
+          <span class="badge" style="background-color: rgba(214,69,69,0.15); color: var(--danger);">À retravailler</span>
+        {% endif %}
+      </div>
+    {% endfor %}
+  </div>
+{% endblock %}
