@@ -158,8 +158,18 @@ form select {
 
 .grid-two {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
   gap: 1rem;
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.grid-two > * {
+  min-width: 0;
+}
+
+@media (min-width: 640px) {
+  .grid-two {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .stats-card {
