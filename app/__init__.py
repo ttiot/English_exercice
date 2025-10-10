@@ -32,7 +32,7 @@ def create_app():
         ensure_admin_account,
         ensure_schema_migrations,
     )
-    from .routes import bp as main_bp
+    from .routes import bp as main_bp, _load_user_from_session
 
     app.register_blueprint(main_bp)
 
@@ -44,8 +44,7 @@ def create_app():
 
     @app.before_request
     def load_current_user():
-        user_id = session.get("user_id")
-        g.current_user = Student.query.get(user_id) if user_id else None
+        g.current_user = _load_user_from_session()
 
     @app.context_processor
     def inject_globals():

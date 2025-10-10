@@ -44,8 +44,17 @@ DIFFICULTY_DISPLAY = {**DIFFICULTY_LABELS, "prepared": "Parcours préparé"}
 DIFFICULTY_CHOICES = [(value, DIFFICULTY_LABELS[value]) for value in DIFFICULTY_LEVELS]
 
 
+def _load_user_from_session() -> Optional[Student]:
+    user_id = session.get("user_id")
+    if not user_id:
+        return None
+    return Student.query.get(user_id)
+
+
 def _current_user() -> Optional[Student]:
-    return getattr(g, "current_user", None)
+    if not hasattr(g, "current_user"):
+        g.current_user = _load_user_from_session()
+    return g.current_user
 
 
 def _login_user(user: Student) -> None:
