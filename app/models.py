@@ -195,33 +195,53 @@ def ensure_schema_migrations() -> None:
     inspector = inspect(db.engine)
     table_names = inspector.get_table_names()
 
-    if "students" not in table_names:
-        return
-
-    columns = {column["name"] for column in inspector.get_columns("students")}
     needs_commit = False
 
-    if "avatar_filename" not in columns:
-        db.session.execute(text("ALTER TABLE students ADD COLUMN avatar_filename VARCHAR(255)"))
-        needs_commit = True
+    if "students" in table_names:
+        student_columns = {
+            column["name"] for column in inspector.get_columns("students")
+        }
 
-    if "pin_hash" not in columns:
-        default_hash = generate_password_hash("0000").replace("'", "''")
-        db.session.execute(
-            text(
-                "ALTER TABLE students ADD COLUMN pin_hash VARCHAR(255) DEFAULT '"
-                + default_hash
-                + "'"
+        if "avatar_filename" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN avatar_filename VARCHAR(255)")
             )
-        )
-        db.session.execute(
-            text(
-                "UPDATE students SET pin_hash = '"
-                + default_hash
-                + "' WHERE pin_hash IS NULL"
+            needs_commit = True
+
+        if "pin_hash" not in student_columns:
+            default_hash = generate_password_hash("0000").replace("'", "''")
+            db.session.execute(
+                text(
+                    "ALTER TABLE students ADD COLUMN pin_hash VARCHAR(255) DEFAULT '"
+                    + default_hash
+                    + "'"
+                )
             )
-        )
-        needs_commit = True
+            db.session.execute(
+                text(
+                    "UPDATE students SET pin_hash = '"
+                    + default_hash
+                    + "' WHERE pin_hash IS NULL"
+                )
+            )
+            needs_commit = True
+
+    if "practice_sessions" in table_names:
+        session_columns = {
+            column["name"] for column in inspector.get_columns("practice_sessions")
+        }
+
+        if "time_limit_minutes" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN time_limit_minutes INTEGER")
+            )
+            needs_commit = True
+
+        if "time_limit_seconds" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN time_limit_seconds INTEGER")
+            )
+            needs_commit = True
 
     if needs_commit:
         db.session.commit()
