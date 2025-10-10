@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from flask import Flask, session
+from flask import Flask, g, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
@@ -27,8 +27,9 @@ def create_app():
 
     from . import models  # noqa: F401
     from .models import (
+        Student,
         ensure_default_categories,
-        ensure_parent_credentials,
+        ensure_admin_account,
         ensure_schema_migrations,
     )
     from .routes import bp as main_bp
@@ -39,23 +40,21 @@ def create_app():
         db.create_all()
         ensure_schema_migrations()
         ensure_default_categories()
-        ensure_parent_credentials(Config.PARENT_PORTAL_PASSWORD)
+        ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
+
+    @app.before_request
+    def load_current_user():
+        user_id = session.get("user_id")
+        g.current_user = Student.query.get(user_id) if user_id else None
 
     @app.context_processor
     def inject_globals():
-        unlocked_raw = session.get("unlocked_students", []) or []
-        unlocked_ids = set()
-        for value in unlocked_raw:
-            try:
-                unlocked_ids.add(int(value))
-            except (TypeError, ValueError):
-                continue
+        current_user = getattr(g, "current_user", None)
 
         return {
             "current_year": datetime.utcnow().year,
             "csrf_token": generate_csrf,
-            "parent_authenticated": session.get("parent_authenticated", False),
-            "unlocked_students": unlocked_ids,
+            "current_user": current_user,
         }
 
     @app.after_request

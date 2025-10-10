@@ -1,5 +1,6 @@
 from collections import defaultdict
 from datetime import datetime
+from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
@@ -9,6 +10,7 @@ from flask import (
     abort,
     flash,
     current_app,
+    g,
     redirect,
     render_template,
     request,
@@ -28,7 +30,6 @@ from .exercise_factory import (
     normalize_difficulty,
 )
 from .models import (
-    ParentCredential,
     PracticeSession,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
@@ -43,6 +44,21 @@ DIFFICULTY_DISPLAY = {**DIFFICULTY_LABELS, "prepared": "Parcours préparé"}
 DIFFICULTY_CHOICES = [(value, DIFFICULTY_LABELS[value]) for value in DIFFICULTY_LEVELS]
 
 
+def _current_user() -> Optional[Student]:
+    return getattr(g, "current_user", None)
+
+
+def _login_user(user: Student) -> None:
+    session["user_id"] = user.id
+    session.permanent = True
+    g.current_user = user
+
+
+def _logout_user() -> None:
+    session.pop("user_id", None)
+    g.current_user = None
+
+
 def _get_student_or_404(student_id: int) -> Student:
     student = Student.query.get(student_id)
     if not student:
@@ -50,34 +66,57 @@ def _get_student_or_404(student_id: int) -> Student:
     return student
 
 
-def _parent_authenticated() -> bool:
-    return session.get("parent_authenticated", False)
+def _login_required(view):
+    @wraps(view)
+    def wrapped_view(*args, **kwargs):
+        user = _current_user()
+        if not user:
+            next_url = request.url if request.method == "GET" else url_for("main.index")
+            return redirect(url_for("main.login", next=next_url))
+        return view(*args, **kwargs)
+
+    return wrapped_view
 
 
-def _student_authenticated(student_id: int) -> bool:
-    unlocked = session.get("unlocked_students", [])
-    return str(student_id) in unlocked
+def _parent_required(view):
+    @wraps(view)
+    @_login_required
+    def wrapped_view(*args, **kwargs):
+        user = _current_user()
+        if not user or not (user.is_parent() or user.is_admin()):
+            flash("Accès réservé aux parents ou à l'administrateur.", "warning")
+            return redirect(url_for("main.index"))
+        return view(*args, **kwargs)
+
+    return wrapped_view
 
 
-def _unlock_student_session(student_id: int) -> None:
-    unlocked = session.get("unlocked_students", [])
-    student_key = str(student_id)
-    if student_key not in unlocked:
-        unlocked.append(student_key)
-        session["unlocked_students"] = unlocked
-        session.modified = True
+def _admin_required(view):
+    @wraps(view)
+    @_login_required
+    def wrapped_view(*args, **kwargs):
+        user = _current_user()
+        if not user or not user.is_admin():
+            flash("Seul l'administrateur peut effectuer cette action.", "warning")
+            return redirect(url_for("main.index"))
+        return view(*args, **kwargs)
+
+    return wrapped_view
 
 
-def _lock_student_session(student_id: int) -> None:
-    unlocked = session.get("unlocked_students", [])
-    student_key = str(student_id)
-    if student_key in unlocked:
-        unlocked.remove(student_key)
-        if unlocked:
-            session["unlocked_students"] = unlocked
-        else:
-            session.pop("unlocked_students", None)
-        session.modified = True
+@bp.before_app_request
+def require_login() -> Optional[None]:
+    endpoint = request.endpoint or ""
+    if endpoint in {"main.login", "main.register", "main.logout"}:
+        return None
+    if endpoint.startswith("static"):
+        return None
+
+    user = _current_user()
+    if not user:
+        next_url = request.url if request.method == "GET" else url_for("main.index")
+        return redirect(url_for("main.login", next=next_url))
+    return None
 
 
 def _slugify_label(label: str) -> str:
@@ -98,44 +137,182 @@ def _delete_avatar_file(filename: Optional[str]) -> None:
 
 
 @bp.route("/")
+@_login_required
 def index():
-    students = Student.query.order_by(Student.created_at.desc()).all()
+    user = _current_user()
+    students = (
+        Student.query.filter_by(role="student")
+        .order_by(Student.created_at.desc())
+        .all()
+    )
     latest_sessions = (
         PracticeSession.query.order_by(PracticeSession.started_at.desc()).limit(5).all()
     )
+    if user and not (user.is_parent() or user.is_admin()):
+        students = [student for student in students if student.id == user.id]
+        latest_sessions = (
+            PracticeSession.query.filter_by(student_id=user.id)
+            .order_by(PracticeSession.started_at.desc())
+            .limit(5)
+            .all()
+        )
     return render_template(
         "index.html",
         students=students,
         latest_sessions=latest_sessions,
-        unlocked_students={int(s) for s in session.get("unlocked_students", [])},
         difficulty_labels=DIFFICULTY_DISPLAY,
+        can_manage_all=user.is_parent() or user.is_admin() if user else False,
     )
 
 
+@bp.route("/register", methods=["GET", "POST"])
+def register():
+    if _current_user():
+        flash("Vous êtes déjà connecté·e.", "info")
+        return redirect(url_for("main.index"))
+
+    if request.method == "POST":
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip() or None
+        email_raw = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        password_confirm = request.form.get("password_confirm", "")
+        age_raw = request.form.get("age", "").strip()
+        goals = request.form.get("goals", "").strip() or None
+
+        if not first_name:
+            flash("Le prénom est obligatoire.", "danger")
+            return redirect(url_for("main.register"))
+
+        if not email_raw:
+            flash("L'adresse e-mail est obligatoire.", "danger")
+            return redirect(url_for("main.register"))
+
+        if Student.query.filter_by(email=email_raw).first():
+            flash("Cette adresse e-mail est déjà utilisée.", "danger")
+            return redirect(url_for("main.register"))
+
+        if len(password) < 8:
+            flash("Le mot de passe doit contenir au moins 8 caractères.", "danger")
+            return redirect(url_for("main.register"))
+
+        if password != password_confirm:
+            flash("La confirmation du mot de passe ne correspond pas.", "danger")
+            return redirect(url_for("main.register"))
+
+        try:
+            age_value = int(age_raw) if age_raw else None
+        except ValueError:
+            flash("L'âge doit être un nombre.", "danger")
+            return redirect(url_for("main.register"))
+
+        avatar_file = request.files.get("avatar")
+        avatar_filename: Optional[str] = None
+        if avatar_file and avatar_file.filename:
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+                flash("Format d'image non pris en charge.", "danger")
+                return redirect(url_for("main.register"))
+
+            avatar_filename = f"{uuid4().hex}.{extension}"
+            destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
+            avatar_file.save(destination)
+
+        student = Student(
+            first_name=first_name,
+            last_name=last_name,
+            email=email_raw,
+            age=age_value,
+            goals=goals,
+            role="student",
+            avatar_filename=avatar_filename,
+        )
+        student.set_password(password)
+
+        db.session.add(student)
+        db.session.commit()
+
+        _login_user(student)
+        flash("Bienvenue ! Ton compte élève a été créé.", "success")
+        return redirect(url_for("main.index"))
+
+    return render_template("auth/register.html")
+
+
+@bp.route("/login", methods=["GET", "POST"])
+def login():
+    if _current_user():
+        flash("Tu es déjà connecté·e.", "info")
+        return redirect(url_for("main.index"))
+
+    if request.method == "POST":
+        email_raw = request.form.get("email", "").strip().lower()
+        password = request.form.get("password", "")
+        next_url = request.form.get("next")
+
+        if not email_raw or not password:
+            flash("Identifiants incomplets.", "danger")
+            return redirect(url_for("main.login"))
+
+        student = Student.query.filter_by(email=email_raw).first()
+        if not student or not student.check_password(password):
+            flash("E-mail ou mot de passe invalide.", "danger")
+            return redirect(url_for("main.login"))
+
+        _login_user(student)
+        flash("Connexion réussie !", "success")
+
+        if next_url and next_url.startswith("/"):
+            return redirect(next_url)
+        return redirect(url_for("main.index"))
+
+    next_url = request.args.get("next") if request.method == "GET" else None
+    return render_template("auth/login.html", next_url=next_url)
+
+
+@bp.route("/logout", methods=["POST"])
+@_login_required
+def logout():
+    _logout_user()
+    flash("Tu es maintenant déconnecté·e.", "info")
+    return redirect(url_for("main.login"))
+
+
 @bp.route("/students/new", methods=["GET", "POST"])
+@_parent_required
 def create_student():
     if request.method == "POST":
         first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip()
-        age = request.form.get("age")
-        goals = request.form.get("goals", "").strip()
-        pin = request.form.get("pin", "").strip()
-        pin_confirm = request.form.get("pin_confirm", "").strip()
+        last_name = request.form.get("last_name", "").strip() or None
+        email_raw = request.form.get("email", "").strip().lower()
+        age_raw = request.form.get("age")
+        goals = request.form.get("goals", "").strip() or None
+        password = request.form.get("password", "")
+        password_confirm = request.form.get("password_confirm", "")
 
         if not first_name:
             flash("Le prénom est obligatoire.", "danger")
             return redirect(url_for("main.create_student"))
 
-        if not pin or not pin.isdigit() or len(pin) != 4:
-            flash("Le code PIN doit contenir exactement 4 chiffres.", "danger")
+        if not email_raw:
+            flash("L'adresse e-mail est obligatoire.", "danger")
             return redirect(url_for("main.create_student"))
 
-        if pin != pin_confirm:
-            flash("La confirmation du code PIN ne correspond pas.", "danger")
+        if Student.query.filter_by(email=email_raw).first():
+            flash("Cette adresse e-mail est déjà utilisée.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        if len(password) < 8:
+            flash("Le mot de passe doit contenir au moins 8 caractères.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        if password != password_confirm:
+            flash("La confirmation du mot de passe ne correspond pas.", "danger")
             return redirect(url_for("main.create_student"))
 
         try:
-            age_value = int(age) if age else None
+            age_value = int(age_raw) if age_raw else None
         except ValueError:
             flash("L'âge doit être un nombre.", "danger")
             return redirect(url_for("main.create_student"))
@@ -155,67 +332,33 @@ def create_student():
 
         student = Student(
             first_name=first_name,
-            last_name=last_name or None,
+            last_name=last_name,
+            email=email_raw,
             age=age_value,
-            goals=goals or None,
+            goals=goals,
             avatar_filename=avatar_filename,
+            role="student",
         )
-        student.set_pin(pin)
+        student.set_password(password)
         db.session.add(student)
         db.session.commit()
 
-        _unlock_student_session(student.id)
         flash("Profil élève créé avec succès !", "success")
         return redirect(url_for("main.view_student", student_id=student.id))
 
     return render_template("student_form.html")
 
-
-@bp.route("/students/<int:student_id>/unlock", methods=["GET", "POST"])
-def unlock_student(student_id: int):
-    student = _get_student_or_404(student_id)
-
-    if _parent_authenticated() or _student_authenticated(student_id):
-        return redirect(url_for("main.view_student", student_id=student_id))
-
-    if request.method == "POST":
-        pin = request.form.get("pin", "").strip()
-        if student.check_pin(pin):
-            _unlock_student_session(student_id)
-            flash("Profil débloqué, amuse-toi bien !", "success")
-            return redirect(url_for("main.view_student", student_id=student_id))
-        flash("Code incorrect. Réessaie.", "danger")
-
-    return render_template("student_unlock.html", student=student)
-
-
-@bp.route("/students/<int:student_id>/lock", methods=["POST"])
-def lock_student(student_id: int):
-    _get_student_or_404(student_id)
-    parent_ok = _parent_authenticated()
-    student_ok = _student_authenticated(student_id)
-
-    if not (parent_ok or student_ok):
-        flash("Ce profil est déjà verrouillé.", "info")
-        return redirect(url_for("main.unlock_student", student_id=student_id))
-
-    _lock_student_session(student_id)
-    flash("Le profil a été verrouillé.", "info")
-
-    next_url = request.form.get("next")
-    if next_url and next_url.startswith("/"):
-        return redirect(next_url)
-    return redirect(url_for("main.index"))
-
-
 @bp.route("/students/<int:student_id>")
+@_login_required
 def view_student(student_id: int):
     student = _get_student_or_404(student_id)
-    parent_ok = _parent_authenticated()
-    student_ok = _student_authenticated(student_id)
+    user = _current_user()
+
+    parent_ok = user.is_parent() or user.is_admin()
+    student_ok = user.id == student.id
     if not (student_ok or parent_ok):
-        flash("Entre ton code secret pour accéder à ton profil.", "warning")
-        return redirect(url_for("main.unlock_student", student_id=student_id))
+        flash("Accès refusé pour ce profil.", "danger")
+        return redirect(url_for("main.index"))
 
     sessions = (
         PracticeSession.query.filter_by(student_id=student.id)
@@ -271,49 +414,64 @@ def view_student(student_id: int):
 
 
 @bp.route("/students/<int:student_id>/settings", methods=["GET", "POST"])
+@_login_required
 def manage_student(student_id: int):
     student = _get_student_or_404(student_id)
 
-    parent_ok = _parent_authenticated()
-    student_ok = _student_authenticated(student_id)
+    user = _current_user()
+    parent_ok = user.is_parent() or user.is_admin()
+    student_ok = user.id == student.id
     if not (parent_ok or student_ok):
-        flash("Débloque d'abord le profil avec le code PIN.", "warning")
-        return redirect(url_for("main.unlock_student", student_id=student_id))
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.index"))
 
     if request.method == "POST":
         action = request.form.get("action", "profile")
 
-        if action == "pin":
-            current_pin = request.form.get("current_pin", "").strip()
-            new_pin = request.form.get("new_pin", "").strip()
-            confirm_pin = request.form.get("confirm_pin", "").strip()
+        if action == "password":
+            current_password = request.form.get("current_password", "").strip()
+            new_password = request.form.get("new_password", "").strip()
+            confirm_password = request.form.get("confirm_password", "").strip()
 
-            if not new_pin or not new_pin.isdigit() or len(new_pin) != 4:
-                flash("Le nouveau code PIN doit contenir exactement 4 chiffres.", "danger")
+            if len(new_password) < 8:
+                flash(
+                    "Le nouveau mot de passe doit contenir au moins 8 caractères.",
+                    "danger",
+                )
                 return redirect(url_for("main.manage_student", student_id=student.id))
 
-            if new_pin != confirm_pin:
-                flash("La confirmation du code PIN ne correspond pas.", "danger")
+            if new_password != confirm_password:
+                flash("La confirmation du mot de passe ne correspond pas.", "danger")
                 return redirect(url_for("main.manage_student", student_id=student.id))
 
-            if not parent_ok and not student.check_pin(current_pin):
-                flash("L'ancien code PIN est incorrect.", "danger")
+            if not parent_ok and not student.check_password(current_password):
+                flash("L'ancien mot de passe est incorrect.", "danger")
                 return redirect(url_for("main.manage_student", student_id=student.id))
 
-            student.set_pin(new_pin)
+            student.set_password(new_password)
             db.session.commit()
-            flash("Code PIN mis à jour avec succès.", "success")
+            flash("Mot de passe mis à jour avec succès.", "success")
             return redirect(url_for("main.manage_student", student_id=student.id))
 
         # Default to profile update
         first_name = request.form.get("first_name", "").strip()
         last_name = request.form.get("last_name", "").strip()
+        email_raw = request.form.get("email", "").strip().lower()
         goals = request.form.get("goals", "").strip()
         age_raw = request.form.get("age", "").strip()
         remove_avatar = request.form.get("remove_avatar") == "on"
 
         if not first_name:
             flash("Le prénom est obligatoire.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        if not email_raw:
+            flash("L'adresse e-mail est obligatoire.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        existing_email = Student.query.filter_by(email=email_raw).first()
+        if existing_email and existing_email.id != student.id:
+            flash("Cette adresse e-mail est déjà utilisée.", "danger")
             return redirect(url_for("main.manage_student", student_id=student.id))
 
         try:
@@ -346,6 +504,7 @@ def manage_student(student_id: int):
 
         student.first_name = first_name
         student.last_name = last_name or None
+        student.email = email_raw
         student.goals = goals or None
         student.age = age_value
 
@@ -361,11 +520,13 @@ def manage_student(student_id: int):
 
 
 @bp.route("/students/<int:student_id>/sessions/new", methods=["GET", "POST"])
+@_login_required
 def start_session(student_id: int):
     student = _get_student_or_404(student_id)
-    if not (_student_authenticated(student_id) or _parent_authenticated()):
-        flash("Débloque d'abord le profil avec le code PIN.", "warning")
-        return redirect(url_for("main.unlock_student", student_id=student_id))
+    user = _current_user()
+    if not (user.id == student.id or user.is_parent() or user.is_admin()):
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.view_student", student_id=student.id))
 
     if request.method == "POST":
         difficulty_choice = request.form.get("difficulty", DIFFICULTY_LEVELS[0])
@@ -454,6 +615,7 @@ def start_session(student_id: int):
 
 
 @bp.route("/sessions/<int:session_id>", methods=["GET", "POST"])
+@_login_required
 def play_session(session_id: int):
     session_obj = PracticeSession.query.get_or_404(session_id)
     student = session_obj.student
@@ -461,11 +623,10 @@ def play_session(session_id: int):
     if not student:
         abort(404)
 
-    parent_ok = _parent_authenticated()
-    student_ok = _student_authenticated(student.id)
-    if not (parent_ok or student_ok):
-        flash("Débloque d'abord le profil avec le code PIN.", "warning")
-        return redirect(url_for("main.unlock_student", student_id=student.id))
+    user = _current_user()
+    if not (user.id == student.id or user.is_parent() or user.is_admin()):
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.view_student", student_id=student.id))
 
     if request.method == "POST":
         correct_answers = 0
@@ -496,17 +657,17 @@ def play_session(session_id: int):
 
 
 @bp.route("/sessions/<int:session_id>/summary")
+@_login_required
 def session_summary(session_id: int):
     session_obj = PracticeSession.query.get_or_404(session_id)
     student = session_obj.student
     if not student:
         abort(404)
 
-    parent_ok = _parent_authenticated()
-    student_ok = _student_authenticated(student.id)
-    if not (parent_ok or student_ok):
-        flash("Débloque d'abord le profil avec le code PIN.", "warning")
-        return redirect(url_for("main.unlock_student", student_id=student.id))
+    user = _current_user()
+    if not (user.id == student.id or user.is_parent() or user.is_admin()):
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.view_student", student_id=student.id))
 
     category_lookup = {
         category.code: category.name for category in QuestionCategory.query.all()
@@ -519,38 +680,11 @@ def session_summary(session_id: int):
     )
 
 
-@bp.route("/parents/login", methods=["GET", "POST"])
-def parent_login():
-    if _parent_authenticated():
-        return redirect(url_for("main.parent_dashboard"))
-
-    if request.method == "POST":
-        password = request.form.get("password", "")
-        credential = ParentCredential.query.first()
-        if credential and credential.check_password(password):
-            session.permanent = True
-            session["parent_authenticated"] = True
-            flash("Connexion réussie.", "success")
-            return redirect(url_for("main.parent_dashboard"))
-        flash("Mot de passe incorrect.", "danger")
-    return render_template("parent_login.html")
-
-
-@bp.route("/parents/logout", methods=["POST"])
-def parent_logout():
-    session.pop("parent_authenticated", None)
-    session.pop("unlocked_students", None)
-    flash("Vous êtes déconnecté.", "info")
-    return redirect(url_for("main.index"))
-
-
 @bp.route("/parents/dashboard")
+@_parent_required
 def parent_dashboard():
-    if not _parent_authenticated():
-        flash("Veuillez vous connecter.", "warning")
-        return redirect(url_for("main.parent_login"))
-
-    students = Student.query.order_by(Student.first_name).all()
+    user = _current_user()
+    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
     prepared_sets = (
         PreparedExerciseSet.query.filter_by(is_used=False)
         .order_by(PreparedExerciseSet.created_at.desc())
@@ -573,22 +707,24 @@ def parent_dashboard():
             }
         )
 
+    all_users = []
+    if user and user.is_admin():
+        all_users = Student.query.order_by(Student.first_name, Student.last_name).all()
+
     return render_template(
         "parent_dashboard.html",
         stats=stats,
         prepared_sets=prepared_sets,
         students=students,
         categories=categories,
+        all_users=all_users,
     )
 
 
 @bp.route("/parents/prepared-exercises/new", methods=["GET", "POST"])
+@_parent_required
 def create_prepared_exercise():
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
-
-    students = Student.query.order_by(Student.first_name).all()
+    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
     categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
 
     if request.method == "POST":
@@ -636,6 +772,8 @@ def create_prepared_exercise():
                 student_obj = Student.query.get(int(student_id))
             except (TypeError, ValueError):
                 student_obj = None
+            if student_obj and student_obj.role != "student":
+                student_obj = None
 
         exercise_set = PreparedExerciseSet(
             title=title,
@@ -672,10 +810,8 @@ def create_prepared_exercise():
 
 
 @bp.route("/parents/categories/new", methods=["POST"])
+@_parent_required
 def create_category():
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
 
     label = request.form.get("name", "").strip()
     if not label:
@@ -697,10 +833,8 @@ def create_category():
 
 
 @bp.route("/parents/categories/<int:category_id>/rename", methods=["POST"])
+@_parent_required
 def rename_category(category_id: int):
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
 
     category = QuestionCategory.query.get_or_404(category_id)
     new_label = request.form.get("name", "").strip()
@@ -732,10 +866,8 @@ def rename_category(category_id: int):
 
 
 @bp.route("/parents/categories/<int:category_id>/delete", methods=["POST"])
+@_parent_required
 def delete_category(category_id: int):
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
 
     category = QuestionCategory.query.get_or_404(category_id)
 
@@ -752,40 +884,9 @@ def delete_category(category_id: int):
     return redirect(url_for("main.parent_dashboard"))
 
 
-@bp.route("/parents/password", methods=["POST"])
-def update_parent_password():
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
-
-    new_password = request.form.get("new_password", "").strip()
-    confirm_password = request.form.get("confirm_password", "").strip()
-
-    if len(new_password) < 6:
-        flash("Le mot de passe doit contenir au moins 6 caractères.", "danger")
-        return redirect(url_for("main.parent_dashboard"))
-
-    if new_password != confirm_password:
-        flash("La confirmation ne correspond pas.", "danger")
-        return redirect(url_for("main.parent_dashboard"))
-
-    credential = ParentCredential.query.first()
-    if not credential:
-        credential = ParentCredential()
-        db.session.add(credential)
-
-    credential.set_password(new_password)
-    db.session.commit()
-    flash("Mot de passe mis à jour.", "success")
-    return redirect(url_for("main.parent_dashboard"))
-
-
 @bp.route("/parents/sessions/<int:session_id>/delete", methods=["POST"])
+@_parent_required
 def delete_session(session_id: int):
-    if not _parent_authenticated():
-        flash("Accès refusé.", "danger")
-        return redirect(url_for("main.parent_login"))
-
     session_obj = PracticeSession.query.get(session_id)
     if not session_obj:
         flash("Session introuvable ou déjà supprimée.", "warning")
@@ -803,3 +904,24 @@ def delete_session(session_id: int):
         return redirect(next_url)
 
     return redirect(url_for("main.view_student", student_id=student_id))
+
+
+@bp.route("/admin/users/<int:user_id>/role", methods=["POST"])
+@_admin_required
+def update_user_role(user_id: int):
+    target = _get_student_or_404(user_id)
+    new_role = request.form.get("role", "student").strip()
+
+    if new_role not in {"student", "parent", "admin"}:
+        flash("Type de compte invalide.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    current_user = _current_user()
+    if current_user.id == target.id and new_role != "admin":
+        flash("Tu ne peux pas retirer ton propre rôle d'administrateur.", "warning")
+        return redirect(url_for("main.parent_dashboard"))
+
+    target.role = new_role
+    db.session.commit()
+    flash("Rôle utilisateur mis à jour.", "success")
+    return redirect(url_for("main.parent_dashboard"))

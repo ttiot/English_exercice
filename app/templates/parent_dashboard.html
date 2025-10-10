@@ -9,10 +9,6 @@
       </div>
       <div class="card-actions">
         <a class="btn btn-primary" href="{{ url_for('main.create_prepared_exercise') }}">Nouvel exercice préparé</a>
-        <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.parent_logout') }}">
-          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-          <button class="btn btn-secondary" type="submit">Déconnexion</button>
-        </form>
       </div>
     </div>
   </div>
@@ -81,18 +77,42 @@
       {% endif %}
     </div>
 
-    <div class="card">
-      <h3>Mot de passe parents</h3>
-      <p>Personnalisez le mot de passe pour sécuriser l'accès.</p>
-      <form method="post" action="{{ url_for('main.update_parent_password') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <label for="new_password">Nouveau mot de passe *</label>
-        <input id="new_password" name="new_password" type="password" minlength="6" required />
-        <label for="confirm_password">Confirmer *</label>
-        <input id="confirm_password" name="confirm_password" type="password" minlength="6" required />
-        <button class="btn btn-primary" type="submit">Mettre à jour</button>
-      </form>
-    </div>
+    {% if all_users %}
+      <div class="card">
+        <h3>Gestion des comptes</h3>
+        <p class="muted">Changez le rôle d'un utilisateur pour lui donner des droits de parent ou d'administrateur.</p>
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Utilisateur</th>
+              <th>E-mail</th>
+              <th>Rôle</th>
+              <th>Mettre à jour</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for user in all_users %}
+              <tr>
+                <td>{{ user.full_name() }}</td>
+                <td>{{ user.email or '—' }}</td>
+                <td>{{ user.role }}</td>
+                <td>
+                  <form class="inline-form" method="post" action="{{ url_for('main.update_user_role', user_id=user.id) }}">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <select name="role">
+                      <option value="student" {% if user.role == 'student' %}selected{% endif %}>Élève</option>
+                      <option value="parent" {% if user.role == 'parent' %}selected{% endif %}>Parent</option>
+                      <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
+                    </select>
+                    <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    {% endif %}
   </div>
 
   <div class="card">
