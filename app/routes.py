@@ -224,6 +224,7 @@ def view_student(student_id: int):
         upcoming_set=upcoming_set,
         category_lookup=category_lookup,
         can_manage=parent_ok or student_ok,
+        parent_ok=parent_ok,
     )
 
 
@@ -717,3 +718,28 @@ def update_parent_password():
     db.session.commit()
     flash("Mot de passe mis à jour.", "success")
     return redirect(url_for("main.parent_dashboard"))
+
+
+@bp.route("/parents/sessions/<int:session_id>/delete", methods=["POST"])
+def delete_session(session_id: int):
+    if not _parent_authenticated():
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.parent_login"))
+
+    session_obj = PracticeSession.query.get(session_id)
+    if not session_obj:
+        flash("Session introuvable ou déjà supprimée.", "warning")
+        return redirect(url_for("main.parent_dashboard"))
+
+    student_id = session_obj.student_id
+
+    db.session.delete(session_obj)
+    db.session.commit()
+
+    flash("La session a été supprimée.", "success")
+
+    next_url = request.form.get("next")
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+
+    return redirect(url_for("main.view_student", student_id=student_id))
