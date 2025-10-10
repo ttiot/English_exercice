@@ -123,6 +123,13 @@ form select {
   background-color: #fdfdff;
 }
 
+.form-help {
+  margin-top: -0.5rem;
+  margin-bottom: 1.25rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
 .alert {
   border-radius: 12px;
   padding: 1rem 1.25rem;

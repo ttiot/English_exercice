@@ -60,6 +60,7 @@ class PracticeSession(db.Model, TimestampMixin):
     time_limit_seconds = db.Column(db.Integer, nullable=True)
     total_questions = db.Column(db.Integer, nullable=False, default=0)
     correct_answers = db.Column(db.Integer, nullable=False, default=0)
+    difficulty = db.Column(db.String(20), nullable=False, default="beginner")
 
     exercises = db.relationship(
         "SessionExercise",
@@ -172,13 +173,35 @@ DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("translate_en_fr", "Traduction EN ➜ FR"),
     ("sentence_fr_en", "Phrase FR ➜ EN"),
     ("sentence_en_fr", "Phrase EN ➜ FR"),
+    ("time_reading", "Dire l'heure"),
+    ("calendar_vocab", "Jours et mois"),
+    ("family_vocab", "La famille"),
+    ("school_vocab", "L'école"),
+    ("daily_routine", "Routine quotidienne"),
+    ("hobbies_vocab", "Loisirs"),
+    ("grammar_present_simple", "Grammaire : présent simple"),
+    ("grammar_pronouns", "Grammaire : pronoms"),
+    ("culture_countries", "Culture anglophone"),
+    ("adjectives_opposites", "Adjectifs contraires"),
 )
 
 
 def ensure_default_categories() -> None:
-    if QuestionCategory.query.count() == 0:
-        for code, name in DEFAULT_CATEGORY_NAMES:
+    existing = {
+        category.code: category for category in QuestionCategory.query.all()
+    }
+    created = False
+
+    for code, name in DEFAULT_CATEGORY_NAMES:
+        category = existing.get(code)
+        if not category:
             db.session.add(QuestionCategory(code=code, name=name))
+            created = True
+        elif category.name != name:
+            category.name = name
+            created = True
+
+    if created:
         db.session.commit()
 
 
@@ -240,6 +263,19 @@ def ensure_schema_migrations() -> None:
         if "time_limit_seconds" not in session_columns:
             db.session.execute(
                 text("ALTER TABLE practice_sessions ADD COLUMN time_limit_seconds INTEGER")
+            )
+            needs_commit = True
+
+        if "difficulty" not in session_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE practice_sessions ADD COLUMN difficulty VARCHAR(20) DEFAULT 'beginner'"
+                )
+            )
+            db.session.execute(
+                text(
+                    "UPDATE practice_sessions SET difficulty = 'beginner' WHERE difficulty IS NULL"
+                )
             )
             needs_commit = True
 

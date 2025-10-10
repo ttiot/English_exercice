@@ -20,7 +20,13 @@ from werkzeug.utils import secure_filename
 
 from . import db
 from .config import Config
-from .exercise_factory import ExercisePrompt, generate_default_exercises
+from .exercise_factory import (
+    ExercisePrompt,
+    DIFFICULTY_LABELS,
+    DIFFICULTY_LEVELS,
+    generate_default_exercises,
+    normalize_difficulty,
+)
 from .models import (
     ParentCredential,
     PracticeSession,
@@ -32,6 +38,9 @@ from .models import (
 )
 
 bp = Blueprint("main", __name__)
+
+DIFFICULTY_DISPLAY = {**DIFFICULTY_LABELS, "prepared": "Parcours préparé"}
+DIFFICULTY_CHOICES = [(value, DIFFICULTY_LABELS[value]) for value in DIFFICULTY_LEVELS]
 
 
 def _get_student_or_404(student_id: int) -> Student:
@@ -99,6 +108,7 @@ def index():
         students=students,
         latest_sessions=latest_sessions,
         unlocked_students={int(s) for s in session.get("unlocked_students", [])},
+        difficulty_labels=DIFFICULTY_DISPLAY,
     )
 
 
@@ -256,6 +266,7 @@ def view_student(student_id: int):
         category_lookup=category_lookup,
         can_manage=parent_ok or student_ok,
         parent_ok=parent_ok,
+        difficulty_labels=DIFFICULTY_DISPLAY,
     )
 
 
@@ -357,6 +368,8 @@ def start_session(student_id: int):
         return redirect(url_for("main.unlock_student", student_id=student_id))
 
     if request.method == "POST":
+        difficulty_choice = request.form.get("difficulty", DIFFICULTY_LEVELS[0])
+        difficulty_value = normalize_difficulty(difficulty_choice)
         try:
             time_limit = request.form.get("time_limit")
             time_limit_value = int(time_limit) if time_limit else None
@@ -375,6 +388,7 @@ def start_session(student_id: int):
             time_limit_minutes=time_limit_value,
             time_limit_seconds=(time_limit_value * 60) if time_limit_value else None,
             total_questions=question_count,
+            difficulty=difficulty_value,
         )
         db.session.add(session_obj)
         db.session.flush()
@@ -397,6 +411,7 @@ def start_session(student_id: int):
             if prepared_set.use_time_limit and prepared_set.time_limit_seconds:
                 session_obj.time_limit_seconds = prepared_set.time_limit_seconds
                 session_obj.time_limit_minutes = prepared_set.time_limit_seconds // 60
+            session_obj.difficulty = "prepared"
 
             for index, question in enumerate(prepared_set.questions):
                 db.session.add(
@@ -411,7 +426,7 @@ def start_session(student_id: int):
             session_obj.total_questions = len(prepared_set.questions)
             prepared_set.mark_used()
         else:
-            exercises = generate_default_exercises(question_count)
+            exercises = generate_default_exercises(question_count, difficulty=difficulty_value)
             for index, exercise in enumerate(exercises):
                 db.session.add(
                     SessionExercise(
@@ -428,7 +443,14 @@ def start_session(student_id: int):
 
         return redirect(url_for("main.play_session", session_id=session_obj.id))
 
-    return render_template("session_form.html", student=student)
+    selected_difficulty = normalize_difficulty(request.args.get("difficulty"))
+    return render_template(
+        "session_form.html",
+        student=student,
+        difficulty_choices=DIFFICULTY_CHOICES,
+        selected_difficulty=selected_difficulty,
+        difficulty_labels=DIFFICULTY_DISPLAY,
+    )
 
 
 @bp.route("/sessions/<int:session_id>", methods=["GET", "POST"])
@@ -469,6 +491,7 @@ def play_session(session_id: int):
         session_obj=session_obj,
         student=student,
         time_limit=time_limit,
+        difficulty_labels=DIFFICULTY_DISPLAY,
     )
 
 
@@ -492,6 +515,7 @@ def session_summary(session_id: int):
         "session_summary.html",
         session_obj=session_obj,
         category_lookup=category_lookup,
+        difficulty_labels=DIFFICULTY_DISPLAY,
     )
 
 

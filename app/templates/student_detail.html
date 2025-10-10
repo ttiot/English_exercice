@@ -77,6 +77,7 @@
           <tr>
             <th>Date</th>
             <th>Score</th>
+            <th>Niveau</th>
             <th>Temps</th>
             <th>Détails</th>
             {% if parent_ok %}
@@ -89,6 +90,7 @@
             <tr>
               <td>{{ session.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
               <td>{{ session.correct_answers }}/{{ session.total_questions }}</td>
+              <td>{{ difficulty_labels.get(session.difficulty or 'beginner', (session.difficulty or 'beginner')|replace('_', ' ')|title) }}</td>
               <td>
                 {% if session.time_limit_seconds %}
                   {% set minutes = session.time_limit_seconds // 60 %}

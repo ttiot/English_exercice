@@ -9,6 +9,16 @@
       <label for="question_count">Nombre de questions</label>
       <input id="question_count" name="question_count" type="number" min="5" max="40" value="20" />
 
+      <label for="difficulty">Niveau de difficulté</label>
+      <select id="difficulty" name="difficulty">
+        {% for value, label in difficulty_choices %}
+          <option value="{{ value }}" {% if value == selected_difficulty %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <p class="form-help">
+        Débutant : révisions essentielles • Intermédiaire : vocabulaire élargi • Avancé : projets et culture.
+      </p>
+
       <label for="time_limit">Temps limite (minutes)</label>
       <input id="time_limit" name="time_limit" type="number" min="0" placeholder="Ex. 15" />
 
