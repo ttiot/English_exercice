@@ -3,7 +3,7 @@
 {% block content %}
   <div class="card">
     <h2>Créer un nouveau profil élève</h2>
-    <p>Ajoute une photo et définis un code PIN à 4 chiffres pour sécuriser l'accès.</p>
+    <p>Ajoute une photo et un mot de passe pour sécuriser l'accès.</p>
     <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
 
@@ -12,6 +12,9 @@
 
       <label for="last_name">Nom</label>
       <input id="last_name" name="last_name" placeholder="Ex. Martin" />
+
+      <label for="email">Adresse e-mail *</label>
+      <input id="email" name="email" type="email" required placeholder="exemple@ecole.fr" />
 
       <label for="avatar">Photo de profil</label>
       <input id="avatar" name="avatar" type="file" accept="image/*" />
@@ -24,29 +27,18 @@
 
       <div class="grid-two">
         <div>
-          <label for="pin">Code PIN *</label>
-          <input
-            id="pin"
-            name="pin"
-            type="password"
-            pattern="\d{4}"
-            maxlength="4"
-            inputmode="numeric"
-            required
-            placeholder="4 chiffres"
-          />
+          <label for="password">Mot de passe *</label>
+          <input id="password" name="password" type="password" minlength="8" required placeholder="Au moins 8 caractères" />
         </div>
         <div>
-          <label for="pin_confirm">Confirmer *</label>
+          <label for="password_confirm">Confirmer *</label>
           <input
-            id="pin_confirm"
-            name="pin_confirm"
+            id="password_confirm"
+            name="password_confirm"
             type="password"
-            pattern="\d{4}"
-            maxlength="4"
-            inputmode="numeric"
+            minlength="8"
             required
-            placeholder="Répéter le code"
+            placeholder="Répéter le mot de passe"
           />
         </div>
       </div>

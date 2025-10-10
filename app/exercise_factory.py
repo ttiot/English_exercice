@@ -596,9 +596,22 @@ def generate_default_exercises(quantity: int = 20, difficulty: str = "beginner")
     normalized = normalize_difficulty(difficulty)
     exercises: List[ExercisePrompt] = []
     eligible = [spec for spec in GENERATOR_REGISTRY if normalized in spec.difficulties]
-    fallback = GENERATOR_REGISTRY or eligible
+    fallback = eligible or GENERATOR_REGISTRY
 
-    for _ in range(quantity):
+    seen_signatures = set()
+    attempts = 0
+    max_attempts = max(10, quantity * 10)
+
+    while len(exercises) < quantity and attempts < max_attempts:
         spec = random.choice(eligible or fallback)
-        exercises.append(spec.builder(normalized))
+        prompt = spec.builder(normalized)
+        signature = (prompt.category, prompt.prompt.strip().lower())
+        if signature in seen_signatures:
+            attempts += 1
+            continue
+
+        exercises.append(prompt)
+        seen_signatures.add(signature)
+        attempts = 0
+
     return exercises

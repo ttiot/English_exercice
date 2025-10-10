@@ -13,7 +13,8 @@ class Config:
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SESSION_COOKIE_SECURE = False
     REMEMBER_COOKIE_DURATION = timedelta(days=30)
-    PARENT_PORTAL_PASSWORD = os.environ.get("PARENT_PORTAL_PASSWORD", "parents123")
+    DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@example.com")
+    DEFAULT_ADMIN_PASSWORD = os.environ.get("DEFAULT_ADMIN_PASSWORD", "admin1234")
 
     UPLOAD_FOLDER = os.environ.get(
         "UPLOAD_FOLDER",

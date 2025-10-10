@@ -23,10 +23,12 @@ class Student(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     first_name = db.Column(db.String(120), nullable=False)
     last_name = db.Column(db.String(120), nullable=True)
+    email = db.Column(db.String(255), unique=True, nullable=True)
+    role = db.Column(db.String(20), nullable=False, default="student")
     age = db.Column(db.Integer, nullable=True)
     goals = db.Column(db.Text, nullable=True)
     avatar_filename = db.Column(db.String(255), nullable=True)
-    pin_hash = db.Column(db.String(255), nullable=False)
+    password_hash = db.Column("pin_hash", db.String(255), nullable=False)
 
     sessions = db.relationship("PracticeSession", backref="student", lazy=True)
 
@@ -35,13 +37,19 @@ class Student(db.Model, TimestampMixin):
             return f"{self.first_name} {self.last_name}"
         return self.first_name
 
-    def set_pin(self, pin_code: str) -> None:
-        self.pin_hash = generate_password_hash(pin_code)
+    def set_password(self, password: str) -> None:
+        self.password_hash = generate_password_hash(password)
 
-    def check_pin(self, pin_code: str) -> bool:
-        if not self.pin_hash:
+    def check_password(self, password: str) -> bool:
+        if not self.password_hash:
             return False
-        return check_password_hash(self.pin_hash, pin_code)
+        return check_password_hash(self.password_hash, password)
+
+    def is_parent(self) -> bool:
+        return self.role == "parent"
+
+    def is_admin(self) -> bool:
+        return self.role == "admin"
 
     def avatar_url(self) -> str:
         if self.avatar_filename:
@@ -152,19 +160,6 @@ class PreparedExerciseQuestion(db.Model, TimestampMixin):
     position = db.Column(db.Integer, nullable=False, default=0)
 
 
-class ParentCredential(db.Model, TimestampMixin):
-    __tablename__ = "parent_credentials"
-
-    id = db.Column(db.Integer, primary_key=True)
-    password_hash = db.Column(db.String(255), nullable=False)
-
-    def set_password(self, password: str) -> None:
-        self.password_hash = generate_password_hash(password)
-
-    def check_password(self, password: str) -> bool:
-        return check_password_hash(self.password_hash, password)
-
-
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("custom", "Personnalisé"),
     ("number_word", "Nombres ➜ mots"),
@@ -205,15 +200,6 @@ def ensure_default_categories() -> None:
         db.session.commit()
 
 
-def ensure_parent_credentials(default_password: str) -> None:
-    credential = ParentCredential.query.first()
-    if not credential:
-        credential = ParentCredential()
-        credential.set_password(default_password)
-        db.session.add(credential)
-        db.session.commit()
-
-
 def ensure_schema_migrations() -> None:
     inspector = inspect(db.engine)
     table_names = inspector.get_table_names()
@@ -224,6 +210,23 @@ def ensure_schema_migrations() -> None:
         student_columns = {
             column["name"] for column in inspector.get_columns("students")
         }
+
+        if "email" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN email VARCHAR(255)")
+            )
+            needs_commit = True
+
+        if "role" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN role VARCHAR(20) DEFAULT 'student'")
+            )
+            db.session.execute(
+                text(
+                    "UPDATE students SET role = 'student' WHERE role IS NULL"
+                )
+            )
+            needs_commit = True
 
         if "avatar_filename" not in student_columns:
             db.session.execute(
@@ -283,6 +286,25 @@ def ensure_schema_migrations() -> None:
         db.session.commit()
 
 
+def ensure_admin_account(default_email: str, default_password: str) -> None:
+    if not default_email or not default_password:
+        return
+
+    existing = Student.query.filter_by(role="admin").first()
+    if existing:
+        return
+
+    admin = Student(
+        first_name="Admin",
+        last_name=None,
+        email=default_email,
+        role="admin",
+    )
+    admin.set_password(default_password)
+    db.session.add(admin)
+    db.session.commit()
+
+
 __all__ = [
     "Student",
     "PracticeSession",
@@ -291,8 +313,7 @@ __all__ = [
     "PreparedExerciseSet",
     "PreparedExerciseQuestion",
     "QuestionCategory",
-    "ParentCredential",
     "ensure_default_categories",
-    "ensure_parent_credentials",
     "ensure_schema_migrations",
+    "ensure_admin_account",
 ]

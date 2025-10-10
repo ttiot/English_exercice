@@ -4,13 +4,6 @@
   <div class="card">
     <h2>Modifier les informations de l'élève</h2>
     <p class="muted">Mettez à jour le prénom, la photo et les objectifs pédagogiques.</p>
-    <div class="card-actions">
-      <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.lock_student', student_id=student.id) }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <input type="hidden" name="next" value="{{ url_for('main.index') }}" />
-        <button class="btn btn-secondary" type="submit">Déconnexion</button>
-      </form>
-    </div>
     <form method="post" enctype="multipart/form-data" action="{{ url_for('main.manage_student', student_id=student.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="action" value="profile" />
@@ -20,6 +13,9 @@
 
       <label for="last_name">Nom</label>
       <input id="last_name" name="last_name" value="{{ student.last_name or '' }}" />
+
+      <label for="email">Adresse e-mail *</label>
+      <input id="email" name="email" type="email" value="{{ student.email or '' }}" required />
 
       <div class="avatar-settings">
         <div class="student-avatar-large">
@@ -50,58 +46,45 @@
   </div>
 
   <div class="card">
-    <h2>Changer le code PIN</h2>
-    <p class="muted">Définissez un nouveau code à 4 chiffres pour sécuriser le profil de l'élève.</p>
+    <h2>Changer le mot de passe</h2>
+    <p class="muted">Choisissez un mot de passe fort pour protéger l'accès au compte.</p>
     <form method="post" action="{{ url_for('main.manage_student', student_id=student.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-      <input type="hidden" name="action" value="pin" />
+      <input type="hidden" name="action" value="password" />
 
       {% if not parent_ok %}
-        <label for="current_pin">Code PIN actuel *</label>
+        <label for="current_password">Mot de passe actuel *</label>
         <input
-          id="current_pin"
-          name="current_pin"
+          id="current_password"
+          name="current_password"
           type="password"
-          pattern="\d{4}"
-          maxlength="4"
-          inputmode="numeric"
+          minlength="8"
           required
-          placeholder="Entrez le code actuel"
+          placeholder="Mot de passe actuel"
         />
       {% else %}
-        <p class="muted">En tant que parent, vous pouvez redéfinir le code sans saisir l'ancien.</p>
+        <p class="muted">En tant que parent, vous pouvez redéfinir le mot de passe sans saisir l'ancien.</p>
       {% endif %}
 
       <div class="grid-two">
         <div>
-          <label for="new_pin">Nouveau code PIN *</label>
-          <input
-            id="new_pin"
-            name="new_pin"
-            type="password"
-            pattern="\d{4}"
-            maxlength="4"
-            inputmode="numeric"
-            required
-            placeholder="4 chiffres"
-          />
+          <label for="new_password">Nouveau mot de passe *</label>
+          <input id="new_password" name="new_password" type="password" minlength="8" required placeholder="Au moins 8 caractères" />
         </div>
         <div>
-          <label for="confirm_pin">Confirmer *</label>
+          <label for="confirm_password">Confirmer *</label>
           <input
-            id="confirm_pin"
-            name="confirm_pin"
+            id="confirm_password"
+            name="confirm_password"
             type="password"
-            pattern="\d{4}"
-            maxlength="4"
-            inputmode="numeric"
+            minlength="8"
             required
-            placeholder="Répéter le code"
+            placeholder="Répéter le mot de passe"
           />
         </div>
       </div>
 
-      <button class="btn btn-primary" type="submit">Mettre à jour le code PIN</button>
+      <button class="btn btn-primary" type="submit">Mettre à jour le mot de passe</button>
     </form>
   </div>
 {% endblock %}
