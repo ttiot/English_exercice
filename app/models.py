@@ -1,8 +1,10 @@
 from datetime import datetime
 from typing import Optional, Sequence
 
-from . import db
+from sqlalchemy import inspect, text
 from werkzeug.security import check_password_hash, generate_password_hash
+
+from . import db
 
 
 class TimestampMixin:
@@ -189,6 +191,42 @@ def ensure_parent_credentials(default_password: str) -> None:
         db.session.commit()
 
 
+def ensure_schema_migrations() -> None:
+    inspector = inspect(db.engine)
+    table_names = inspector.get_table_names()
+
+    if "students" not in table_names:
+        return
+
+    columns = {column["name"] for column in inspector.get_columns("students")}
+    needs_commit = False
+
+    if "avatar_filename" not in columns:
+        db.session.execute(text("ALTER TABLE students ADD COLUMN avatar_filename VARCHAR(255)"))
+        needs_commit = True
+
+    if "pin_hash" not in columns:
+        default_hash = generate_password_hash("0000").replace("'", "''")
+        db.session.execute(
+            text(
+                "ALTER TABLE students ADD COLUMN pin_hash VARCHAR(255) DEFAULT '"
+                + default_hash
+                + "'"
+            )
+        )
+        db.session.execute(
+            text(
+                "UPDATE students SET pin_hash = '"
+                + default_hash
+                + "' WHERE pin_hash IS NULL"
+            )
+        )
+        needs_commit = True
+
+    if needs_commit:
+        db.session.commit()
+
+
 __all__ = [
     "Student",
     "PracticeSession",
@@ -200,4 +238,5 @@ __all__ = [
     "ParentCredential",
     "ensure_default_categories",
     "ensure_parent_credentials",
+    "ensure_schema_migrations",
 ]

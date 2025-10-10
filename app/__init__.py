@@ -26,13 +26,18 @@ def create_app():
     csrf.init_app(app)
 
     from . import models  # noqa: F401
-    from .models import ensure_default_categories, ensure_parent_credentials
+    from .models import (
+        ensure_default_categories,
+        ensure_parent_credentials,
+        ensure_schema_migrations,
+    )
     from .routes import bp as main_bp
 
     app.register_blueprint(main_bp)
 
     with app.app_context():
         db.create_all()
+        ensure_schema_migrations()
         ensure_default_categories()
         ensure_parent_credentials(Config.PARENT_PORTAL_PASSWORD)
 
