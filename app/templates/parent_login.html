@@ -1,0 +1,14 @@
+{% extends 'base.html' %}
+{% block title %}Connexion parents{% endblock %}
+{% block content %}
+  <div class="card" style="max-width: 500px; margin: 2rem auto;">
+    <h2>Accès parents</h2>
+    <p>Entrez le mot de passe pour consulter la progression et préparer des exercices. Ce mot de passe peut être personnalisé une fois connecté.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label for="password">Mot de passe</label>
+      <input id="password" name="password" type="password" required />
+      <button class="btn btn-primary" type="submit">Se connecter</button>
+    </form>
+  </div>
+{% endblock %}

@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}Nouvel exercice préparé{% endblock %}
+{% block content %}
+  <div class="card">
+    <div class="card-header-actions">
+      <div>
+        <h2>Créer un exercice préparé</h2>
+        <p class="muted">Ajoutez autant de questions que nécessaire et choisissez si l'exercice est chronométré.</p>
+      </div>
+      <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Retour</a>
+    </div>
+    <form method="post" id="prepared-exercise-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label for="title">Nom de l'exercice *</label>
+      <input id="title" name="title" required placeholder="Ex. Révisions des nombres" />
+
+      <label for="student_id">Attribuer à</label>
+      <select id="student_id" name="student_id">
+        <option value="all">Tous les élèves</option>
+        {% for student in students %}
+          <option value="{{ student.id }}">{{ student.full_name() }}</option>
+        {% endfor %}
+      </select>
+
+      <label class="checkbox">
+        <input type="checkbox" id="use_time_limit" name="use_time_limit" />
+        Limiter l'exercice dans le temps
+      </label>
+      <div class="time-fields" id="time_fields" hidden>
+        <div class="grid-two">
+          <div>
+            <label for="limit_minutes">Minutes</label>
+            <input id="limit_minutes" name="limit_minutes" type="number" min="0" value="5" />
+          </div>
+          <div>
+            <label for="limit_seconds">Secondes</label>
+            <input id="limit_seconds" name="limit_seconds" type="number" min="0" max="59" value="0" />
+          </div>
+        </div>
+      </div>
+
+      <h3>Questions</h3>
+      <div id="questions_container" class="question-stack"></div>
+      <button class="btn btn-secondary" type="button" id="add-question">Ajouter une question</button>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+      </div>
+    </form>
+  </div>
+
+  <template id="question-template">
+    <div class="question-card">
+      <div class="question-header">
+        <h4>Question <span class="question-index"></span></h4>
+        <button class="btn btn-danger btn-small" type="button" data-action="remove">Retirer</button>
+      </div>
+      <label>Consigne *</label>
+      <textarea name="question_prompt[]" rows="2" required placeholder="Ex. Écrire en anglais le nombre 24"></textarea>
+      <label>Réponse attendue *</label>
+      <input name="question_answer[]" required placeholder="twenty-four" />
+      <label>Catégorie</label>
+      <select name="question_category[]">
+        {% for category in categories %}
+          <option value="{{ category.code }}">{{ category.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </template>
+{% endblock %}
+
+{% block scripts %}
+  {{ super() }}
+  <script src="{{ url_for('static', filename='js/prepared_exercise.js') }}"></script>
+{% endblock %}

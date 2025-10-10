@@ -1,0 +1,123 @@
+{% extends 'base.html' %}
+{% block title %}Profil de {{ student.full_name() }}{% endblock %}
+{% block content %}
+  <div class="card student-profile">
+    <div class="student-profile-header">
+      <div class="student-avatar-large">
+        <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
+      </div>
+      <div>
+        <h2>{{ student.full_name() }}</h2>
+        <p class="muted">
+          {% if student.age %}{{ student.age }} ans • {% endif %}
+          Profil sécurisé par code PIN
+        </p>
+        {% if student.goals %}
+          <p><strong>Objectifs :</strong> {{ student.goals }}</p>
+        {% endif %}
+        <div class="student-actions">
+          <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+          {% if can_manage %}
+            <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">Gérer le profil</a>
+          {% endif %}
+          {% if can_manage %}
+            <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.lock_student', student_id=student.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="hidden" name="next" value="{{ url_for('main.index') }}" />
+              <button class="btn btn-secondary" type="submit">Déconnexion</button>
+            </form>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+  </div>
+
+  {% if upcoming_set %}
+    <div class="card">
+      <h3>Prochain exercice préparé</h3>
+      <p>
+        <strong>{{ upcoming_set.title }}</strong>
+        {% if upcoming_set.student_id %}(exercice dédié){% else %}(exercice général){% endif %}
+      </p>
+      <p>
+        {{ upcoming_set.questions|length }} question{{ 's' if upcoming_set.questions|length > 1 else '' }}
+        {% if upcoming_set.use_time_limit and upcoming_set.time_limit_seconds %}
+          • Temps limite :
+          {% set minutes = upcoming_set.time_limit_seconds // 60 %}
+          {% set seconds = upcoming_set.time_limit_seconds % 60 %}
+          {{ minutes }} min {{ seconds }} s
+        {% else %}
+          • Sans limite de temps
+        {% endif %}
+      </p>
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Progression par compétence</h3>
+    {% if progress %}
+      <div class="grid">
+        {% for item in progress|sort(attribute='label') %}
+          <div class="stats-card">
+            <h3>{{ item.label }}</h3>
+            <p>{{ item.correct }} bonnes réponses sur {{ item.total }} ({{ '%.0f'|format(item.rate) }}%)</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>Pas encore de progression enregistrée. Lance la première session !</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Sessions passées</h3>
+    {% if sessions %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Date</th>
+            <th>Score</th>
+            <th>Niveau</th>
+            <th>Temps</th>
+            <th>Détails</th>
+            {% if parent_ok %}
+              <th>Actions</th>
+            {% endif %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in sessions %}
+            <tr>
+              <td>{{ session.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td>{{ session.correct_answers }}/{{ session.total_questions }}</td>
+              <td>{{ difficulty_labels.get(session.difficulty or 'beginner', (session.difficulty or 'beginner')|replace('_', ' ')|title) }}</td>
+              <td>
+                {% if session.time_limit_seconds %}
+                  {% set minutes = session.time_limit_seconds // 60 %}
+                  {% set seconds = session.time_limit_seconds % 60 %}
+                  {{ minutes }} min {{ seconds }} s
+                {% elif session.time_limit_minutes %}
+                  {{ session.time_limit_minutes }} min
+                {% else %}
+                  Sans limite
+                {% endif %}
+              </td>
+              <td><a href="{{ url_for('main.session_summary', session_id=session.id) }}">Voir la correction</a></td>
+              {% if parent_ok %}
+                <td>
+                  <form method="post" action="{{ url_for('main.delete_session', session_id=session.id) }}" onsubmit="return confirm('Supprimer cette session ?');">
+                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                    <input type="hidden" name="next" value="{{ request.full_path }}" />
+                    <button class="btn btn-danger btn-small" type="submit">Supprimer</button>
+                  </form>
+                </td>
+              {% endif %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>Aucune session pour le moment.</p>
+    {% endif %}
+  </div>
+{% endblock %}
