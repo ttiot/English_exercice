@@ -18,7 +18,7 @@
       <h1><a href="{{ url_for('main.index') }}">English Explorer</a></h1>
       <div class="navbar-actions">
         {% if current_user %}
-          <span class="navbar-hello">Bonjour {{ current_user.full_name() }}</span>
+          <span class="navbar-hello">Bonjour {{ current_user.full_name() | e }}</span>
           {% if current_user.is_parent() or current_user.is_admin() %}
             <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
             <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Espace Parents</a>
@@ -39,7 +39,7 @@
       {% with messages = get_flashed_messages(with_categories=true) %}
         {% if messages %}
           {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
+            <div class="alert alert-{{ category }}">{{ message | e }}</div>
           {% endfor %}
         {% endif %}
       {% endwith %}

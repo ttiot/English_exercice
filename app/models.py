@@ -235,20 +235,14 @@ def ensure_schema_migrations() -> None:
             needs_commit = True
 
         if "pin_hash" not in student_columns:
-            default_hash = generate_password_hash("0000").replace("'", "''")
+            default_hash = generate_password_hash("0000")
             db.session.execute(
-                text(
-                    "ALTER TABLE students ADD COLUMN pin_hash VARCHAR(255) DEFAULT '"
-                    + default_hash
-                    + "'"
-                )
+                text("ALTER TABLE students ADD COLUMN pin_hash VARCHAR(255) DEFAULT :hash"),
+                {"hash": default_hash}
             )
             db.session.execute(
-                text(
-                    "UPDATE students SET pin_hash = '"
-                    + default_hash
-                    + "' WHERE pin_hash IS NULL"
-                )
+                text("UPDATE students SET pin_hash = :hash WHERE pin_hash IS NULL"),
+                {"hash": default_hash}
             )
             needs_commit = True
 

@@ -4,6 +4,7 @@ from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Optional
 from uuid import uuid4
+from urllib.parse import urlparse, urljoin
 
 from flask import (
     Blueprint,
@@ -19,6 +20,18 @@ from flask import (
 )
 
 from werkzeug.utils import secure_filename
+
+try:
+    import magic
+    MAGIC_AVAILABLE = True
+except ImportError:
+    MAGIC_AVAILABLE = False
+
+try:
+    from PIL import Image
+    PIL_AVAILABLE = True
+except ImportError:
+    PIL_AVAILABLE = False
 
 from . import db
 from .config import Config
@@ -37,11 +50,58 @@ from .models import (
     SessionExercise,
     Student,
 )
+from .validators import (
+    validate_name,
+    validate_email,
+    validate_age,
+    validate_goals,
+    validate_password,
+    sanitize_text_input,
+    validate_question_content,
+)
 
 bp = Blueprint("main", __name__)
 
 DIFFICULTY_DISPLAY = {**DIFFICULTY_LABELS, "prepared": "Parcours préparé"}
 DIFFICULTY_CHOICES = [(value, DIFFICULTY_LABELS[value]) for value in DIFFICULTY_LEVELS]
+
+
+def is_safe_url(target):
+    """Vérifier qu'une URL de redirection est sûre"""
+    ref_url = urlparse(request.host_url)
+    test_url = urlparse(urljoin(request.host_url, target))
+    return test_url.scheme in ('http', 'https') and \
+           ref_url.netloc == test_url.netloc
+
+
+def validate_image_file(file):
+    """Validation stricte des fichiers image"""
+    if not file or not file.filename:
+        return False
+    
+    # Vérifier l'extension
+    sanitized = secure_filename(file.filename)
+    extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+    if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+        return False
+    
+    # Vérifier le type MIME réel si python-magic est disponible
+    if MAGIC_AVAILABLE:
+        file_type = magic.from_buffer(file.read(1024), mime=True)
+        file.seek(0)
+        if file_type not in ['image/jpeg', 'image/png', 'image/gif']:
+            return False
+    
+    # Vérifier que c'est vraiment une image si PIL est disponible
+    if PIL_AVAILABLE:
+        try:
+            Image.open(file).verify()
+            file.seek(0)
+            return True
+        except Exception:
+            return False
+    
+    return True
 
 
 def _load_user_from_session() -> Optional[Student]:
@@ -181,49 +241,63 @@ def register():
         return redirect(url_for("main.index"))
 
     if request.method == "POST":
-        first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip() or None
-        email_raw = request.form.get("email", "").strip().lower()
+        first_name = sanitize_text_input(request.form.get("first_name", ""))
+        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
+        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
         password = request.form.get("password", "")
         password_confirm = request.form.get("password_confirm", "")
         age_raw = request.form.get("age", "").strip()
-        goals = request.form.get("goals", "").strip() or None
+        goals = sanitize_text_input(request.form.get("goals", "")) or None
 
-        if not first_name:
-            flash("Le prénom est obligatoire.", "danger")
+        # Validation stricte du prénom
+        if not validate_name(first_name):
+            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
             return redirect(url_for("main.register"))
 
-        if not email_raw:
-            flash("L'adresse e-mail est obligatoire.", "danger")
+        # Validation stricte du nom de famille
+        if last_name and not validate_name(last_name):
+            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
+            return redirect(url_for("main.register"))
+
+        # Validation stricte de l'email
+        if not validate_email(email_raw):
+            flash("L'adresse e-mail n'est pas valide.", "danger")
             return redirect(url_for("main.register"))
 
         if Student.query.filter_by(email=email_raw).first():
             flash("Cette adresse e-mail est déjà utilisée.", "danger")
             return redirect(url_for("main.register"))
 
-        if len(password) < 8:
-            flash("Le mot de passe doit contenir au moins 8 caractères.", "danger")
+        # Validation stricte du mot de passe
+        password_valid, password_message = validate_password(password)
+        if not password_valid:
+            flash(password_message, "danger")
             return redirect(url_for("main.register"))
 
         if password != password_confirm:
             flash("La confirmation du mot de passe ne correspond pas.", "danger")
             return redirect(url_for("main.register"))
 
-        try:
-            age_value = int(age_raw) if age_raw else None
-        except ValueError:
-            flash("L'âge doit être un nombre.", "danger")
+        # Validation stricte de l'âge
+        age_value = validate_age(age_raw)
+        if age_raw and age_value is None:
+            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
+            return redirect(url_for("main.register"))
+
+        # Validation stricte des objectifs
+        if goals and not validate_goals(goals):
+            flash("Les objectifs contiennent du contenu invalide.", "danger")
             return redirect(url_for("main.register"))
 
         avatar_file = request.files.get("avatar")
         avatar_filename: Optional[str] = None
         if avatar_file and avatar_file.filename:
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
-                flash("Format d'image non pris en charge.", "danger")
+            if not validate_image_file(avatar_file):
+                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
                 return redirect(url_for("main.register"))
 
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
             avatar_filename = f"{uuid4().hex}.{extension}"
             destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
             avatar_file.save(destination)
@@ -272,7 +346,7 @@ def login():
         _login_user(student)
         flash("Connexion réussie !", "success")
 
-        if next_url and next_url.startswith("/"):
+        if next_url and is_safe_url(next_url):
             return redirect(next_url)
         return redirect(url_for("main.index"))
 
@@ -292,49 +366,63 @@ def logout():
 @_parent_required
 def create_student():
     if request.method == "POST":
-        first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip() or None
-        email_raw = request.form.get("email", "").strip().lower()
-        age_raw = request.form.get("age")
-        goals = request.form.get("goals", "").strip() or None
+        first_name = sanitize_text_input(request.form.get("first_name", ""))
+        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
+        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
+        age_raw = request.form.get("age", "").strip()
+        goals = sanitize_text_input(request.form.get("goals", "")) or None
         password = request.form.get("password", "")
         password_confirm = request.form.get("password_confirm", "")
 
-        if not first_name:
-            flash("Le prénom est obligatoire.", "danger")
+        # Validation stricte du prénom
+        if not validate_name(first_name):
+            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
             return redirect(url_for("main.create_student"))
 
-        if not email_raw:
-            flash("L'adresse e-mail est obligatoire.", "danger")
+        # Validation stricte du nom de famille
+        if last_name and not validate_name(last_name):
+            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        # Validation stricte de l'email
+        if not validate_email(email_raw):
+            flash("L'adresse e-mail n'est pas valide.", "danger")
             return redirect(url_for("main.create_student"))
 
         if Student.query.filter_by(email=email_raw).first():
             flash("Cette adresse e-mail est déjà utilisée.", "danger")
             return redirect(url_for("main.create_student"))
 
-        if len(password) < 8:
-            flash("Le mot de passe doit contenir au moins 8 caractères.", "danger")
+        # Validation stricte du mot de passe
+        password_valid, password_message = validate_password(password)
+        if not password_valid:
+            flash(password_message, "danger")
             return redirect(url_for("main.create_student"))
 
         if password != password_confirm:
             flash("La confirmation du mot de passe ne correspond pas.", "danger")
             return redirect(url_for("main.create_student"))
 
-        try:
-            age_value = int(age_raw) if age_raw else None
-        except ValueError:
-            flash("L'âge doit être un nombre.", "danger")
+        # Validation stricte de l'âge
+        age_value = validate_age(age_raw)
+        if age_raw and age_value is None:
+            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        # Validation stricte des objectifs
+        if goals and not validate_goals(goals):
+            flash("Les objectifs contiennent du contenu invalide.", "danger")
             return redirect(url_for("main.create_student"))
 
         avatar_file = request.files.get("avatar")
         avatar_filename: Optional[str] = None
         if avatar_file and avatar_file.filename:
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
-                flash("Format d'image non pris en charge.", "danger")
+            if not validate_image_file(avatar_file):
+                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
                 return redirect(url_for("main.create_student"))
 
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
             avatar_filename = f"{uuid4().hex}.{extension}"
             destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
             avatar_file.save(destination)
@@ -492,12 +580,12 @@ def manage_student(student_id: int):
         avatar_file = request.files.get("avatar")
         new_avatar_filename: Optional[str] = None
         if avatar_file and avatar_file.filename:
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
-                flash("Format d'image non pris en charge.", "danger")
+            if not validate_image_file(avatar_file):
+                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
                 return redirect(url_for("main.manage_student", student_id=student.id))
 
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
             new_avatar_filename = f"{uuid4().hex}.{extension}"
             destination = Path(current_app.config["UPLOAD_FOLDER"]) / new_avatar_filename
             avatar_file.save(destination)
@@ -763,10 +851,17 @@ def create_prepared_exercise():
         for prompt_text, answer_text, category_code in zip(
             prompts, answers, categories_selected
         ):
-            prompt_clean = prompt_text.strip()
-            answer_clean = answer_text.strip()
+            prompt_clean = sanitize_text_input(prompt_text)
+            answer_clean = sanitize_text_input(answer_text)
             category_code = (category_code or "custom").strip() or "custom"
+            
+            # Validation stricte du contenu des questions
             if prompt_clean and answer_clean:
+                content_valid, content_message = validate_question_content(prompt_clean, answer_clean)
+                if not content_valid:
+                    flash(f"Question invalide : {content_message}", "danger")
+                    return redirect(url_for("main.create_prepared_exercise"))
+                
                 questions_payload.append(
                     (prompt_clean, answer_clean, category_code)
                 )

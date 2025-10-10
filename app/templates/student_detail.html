@@ -11,7 +11,7 @@
         {% set role_label = {'student': 'élève', 'parent': 'parent', 'admin': 'admin'} %}
         <p class="muted">{% if student.age %}{{ student.age }} ans • {% endif %}Compte {{ role_label.get(student.role, student.role) }}</p>
         {% if student.goals %}
-          <p><strong>Objectifs :</strong> {{ student.goals }}</p>
+          <p><strong>Objectifs :</strong> {{ student.goals | e }}</p>
         {% endif %}
         <div class="student-actions">
           <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
