@@ -92,6 +92,11 @@ a:hover {
   color: white;
 }
 
+.btn-small {
+  padding: 0.35rem 0.75rem;
+  font-size: 0.85rem;
+}
+
 form label {
   display: block;
   font-weight: 600;
@@ -144,6 +149,12 @@ form select {
   gap: 1.5rem;
 }
 
+.grid-two {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
 .stats-card {
   display: flex;
   flex-direction: column;
@@ -163,6 +174,16 @@ form select {
   font-weight: 600;
   background-color: rgba(28, 126, 214, 0.12);
   color: var(--primary-dark);
+}
+
+.badge-locked {
+  background-color: rgba(214, 69, 69, 0.12);
+  color: var(--danger);
+}
+
+.badge-unlocked {
+  background-color: rgba(47, 158, 68, 0.12);
+  color: var(--success);
 }
 
 .table {
@@ -194,4 +215,208 @@ footer {
   text-align: center;
   padding: 2rem 0 3rem;
   color: var(--muted);
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.student-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 1.5rem;
+}
+
+.student-card {
+  display: flex;
+  gap: 1rem;
+  align-items: center;
+  background: rgba(255, 255, 255, 0.85);
+  border-radius: 16px;
+  padding: 1rem;
+  box-shadow: 0 10px 25px rgba(15, 23, 42, 0.08);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  color: inherit;
+}
+
+.student-card:hover {
+  transform: translateY(-3px);
+  text-decoration: none;
+  box-shadow: 0 14px 30px rgba(15, 23, 42, 0.12);
+}
+
+.student-card-body h3 {
+  margin: 0;
+}
+
+.student-avatar,
+.student-avatar-large {
+  width: 70px;
+  height: 70px;
+  border-radius: 50%;
+  overflow: hidden;
+  background-color: rgba(148, 163, 184, 0.2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.student-avatar img,
+.student-avatar-large img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.student-avatar-large {
+  width: 120px;
+  height: 120px;
+  box-shadow: inset 0 0 0 4px rgba(28, 126, 214, 0.15);
+}
+
+.student-profile-header {
+  display: flex;
+  gap: 2rem;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.unlock-card {
+  max-width: 420px;
+  margin: 2rem auto;
+  text-align: center;
+}
+
+.unlock-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  margin-top: 1.5rem;
+}
+
+.pin-input {
+  font-size: 1.5rem;
+  text-align: center;
+  letter-spacing: 0.5rem;
+}
+
+.card-header-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.card-actions {
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.responsive-grid {
+  display: grid;
+  gap: 1.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+}
+
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin: 1rem 0;
+}
+
+.inline-form input[type='text'],
+.inline-form input[type='password'],
+.inline-form input[type='number'] {
+  flex: 1;
+  min-width: 180px;
+}
+
+.category-list {
+  list-style: none;
+  padding: 0;
+  margin: 1rem 0 0;
+  display: grid;
+  gap: 1rem;
+}
+
+.category-list li {
+  background: rgba(248, 250, 252, 0.9);
+  border-radius: 12px;
+  padding: 1rem;
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+}
+
+.category-list details {
+  margin-top: 0.5rem;
+}
+
+.prepared-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.prepared-item {
+  padding: 1rem 1.25rem;
+  border-radius: 16px;
+  background: rgba(248, 250, 252, 0.75);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+}
+
+.prepared-item header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.question-stack {
+  display: grid;
+  gap: 1.25rem;
+  margin-bottom: 1.5rem;
+}
+
+.question-card {
+  border-radius: 16px;
+  padding: 1.25rem;
+  background: rgba(248, 250, 252, 0.9);
+  box-shadow: inset 0 0 0 1px rgba(148, 163, 184, 0.15);
+}
+
+.question-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.form-actions {
+  margin-top: 1.5rem;
+}
+
+.time-fields {
+  margin: 1rem 0;
+}
+
+.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+@media (max-width: 600px) {
+  .student-profile-header {
+    gap: 1rem;
+  }
+
+  .student-avatar-large {
+    width: 100px;
+    height: 100px;
+  }
 }

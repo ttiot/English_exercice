@@ -1,25 +1,54 @@
 {% extends 'base.html' %}
 {% block title %}Profil de {{ student.full_name() }}{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>{{ student.full_name() }}</h2>
-    <p>
-      {% if student.age %}<strong>Âge :</strong> {{ student.age }} ans<br />{% endif %}
-      {% if student.goals %}<strong>Objectifs :</strong> {{ student.goals }}{% endif %}
-    </p>
-    <div style="display: flex; gap: 1rem; flex-wrap: wrap;">
-      <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+  <div class="card student-profile">
+    <div class="student-profile-header">
+      <div class="student-avatar-large">
+        <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
+      </div>
+      <div>
+        <h2>{{ student.full_name() }}</h2>
+        <p class="muted">
+          {% if student.age %}{{ student.age }} ans • {% endif %}
+          Profil sécurisé par code PIN
+        </p>
+        {% if student.goals %}
+          <p><strong>Objectifs :</strong> {{ student.goals }}</p>
+        {% endif %}
+        <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+      </div>
     </div>
   </div>
+
+  {% if upcoming_set %}
+    <div class="card">
+      <h3>Prochain exercice préparé</h3>
+      <p>
+        <strong>{{ upcoming_set.title }}</strong>
+        {% if upcoming_set.student_id %}(exercice dédié){% else %}(exercice général){% endif %}
+      </p>
+      <p>
+        {{ upcoming_set.questions|length }} question{{ 's' if upcoming_set.questions|length > 1 else '' }}
+        {% if upcoming_set.use_time_limit and upcoming_set.time_limit_seconds %}
+          • Temps limite :
+          {% set minutes = upcoming_set.time_limit_seconds // 60 %}
+          {% set seconds = upcoming_set.time_limit_seconds % 60 %}
+          {{ minutes }} min {{ seconds }} s
+        {% else %}
+          • Sans limite de temps
+        {% endif %}
+      </p>
+    </div>
+  {% endif %}
 
   <div class="card">
     <h3>Progression par compétence</h3>
     {% if progress %}
       <div class="grid">
-        {% for category, stats in progress.items() %}
+        {% for item in progress|sort(attribute='label') %}
           <div class="stats-card">
-            <h3>{{ category | replace('_', ' ') | capitalize }}</h3>
-            <p>{{ stats.correct }} bonnes réponses sur {{ stats.total }} ({{ '%.0f'|format(stats.rate) }}%)</p>
+            <h3>{{ item.label }}</h3>
+            <p>{{ item.correct }} bonnes réponses sur {{ item.total }} ({{ '%.0f'|format(item.rate) }}%)</p>
           </div>
         {% endfor %}
       </div>
@@ -46,7 +75,11 @@
               <td>{{ session.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
               <td>{{ session.correct_answers }}/{{ session.total_questions }}</td>
               <td>
-                {% if session.time_limit_minutes %}
+                {% if session.time_limit_seconds %}
+                  {% set minutes = session.time_limit_seconds // 60 %}
+                  {% set seconds = session.time_limit_seconds % 60 %}
+                  {{ minutes }} min {{ seconds }} s
+                {% elif session.time_limit_minutes %}
                   {{ session.time_limit_minutes }} min
                 {% else %}
                   Sans limite

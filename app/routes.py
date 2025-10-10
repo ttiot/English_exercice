@@ -1,11 +1,14 @@
 from collections import defaultdict
 from datetime import datetime
-from typing import Dict, List
+from pathlib import Path
+from typing import Dict, List, Optional
+from uuid import uuid4
 
 from flask import (
     Blueprint,
     abort,
     flash,
+    current_app,
     redirect,
     render_template,
     request,
@@ -13,10 +16,20 @@ from flask import (
     url_for,
 )
 
+from werkzeug.utils import secure_filename
+
 from . import db
 from .config import Config
 from .exercise_factory import ExercisePrompt, generate_default_exercises
-from .models import PracticeSession, PreparedExercise, SessionExercise, Student
+from .models import (
+    ParentCredential,
+    PracticeSession,
+    PreparedExerciseQuestion,
+    PreparedExerciseSet,
+    QuestionCategory,
+    SessionExercise,
+    Student,
+)
 
 bp = Blueprint("main", __name__)
 
@@ -32,6 +45,25 @@ def _parent_authenticated() -> bool:
     return session.get("parent_authenticated", False)
 
 
+def _student_authenticated(student_id: int) -> bool:
+    unlocked = session.get("unlocked_students", [])
+    return str(student_id) in unlocked
+
+
+def _unlock_student_session(student_id: int) -> None:
+    unlocked = session.get("unlocked_students", [])
+    student_key = str(student_id)
+    if student_key not in unlocked:
+        unlocked.append(student_key)
+        session["unlocked_students"] = unlocked
+        session.modified = True
+
+
+def _slugify_label(label: str) -> str:
+    slug = secure_filename(label.lower())
+    return slug.replace("-", "_") or f"category_{uuid4().hex[:6]}"
+
+
 @bp.route("/")
 def index():
     students = Student.query.order_by(Student.created_at.desc()).all()
@@ -42,6 +74,7 @@ def index():
         "index.html",
         students=students,
         latest_sessions=latest_sessions,
+        unlocked_students={int(s) for s in session.get("unlocked_students", [])},
     )
 
 
@@ -52,9 +85,19 @@ def create_student():
         last_name = request.form.get("last_name", "").strip()
         age = request.form.get("age")
         goals = request.form.get("goals", "").strip()
+        pin = request.form.get("pin", "").strip()
+        pin_confirm = request.form.get("pin_confirm", "").strip()
 
         if not first_name:
             flash("Le prénom est obligatoire.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        if not pin or not pin.isdigit() or len(pin) != 4:
+            flash("Le code PIN doit contenir exactement 4 chiffres.", "danger")
+            return redirect(url_for("main.create_student"))
+
+        if pin != pin_confirm:
+            flash("La confirmation du code PIN ne correspond pas.", "danger")
             return redirect(url_for("main.create_student"))
 
         try:
@@ -63,24 +106,62 @@ def create_student():
             flash("L'âge doit être un nombre.", "danger")
             return redirect(url_for("main.create_student"))
 
+        avatar_file = request.files.get("avatar")
+        avatar_filename: Optional[str] = None
+        if avatar_file and avatar_file.filename:
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+                flash("Format d'image non pris en charge.", "danger")
+                return redirect(url_for("main.create_student"))
+
+            avatar_filename = f"{uuid4().hex}.{extension}"
+            destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
+            avatar_file.save(destination)
+
         student = Student(
             first_name=first_name,
             last_name=last_name or None,
             age=age_value,
             goals=goals or None,
+            avatar_filename=avatar_filename,
         )
+        student.set_pin(pin)
         db.session.add(student)
         db.session.commit()
 
+        _unlock_student_session(student.id)
         flash("Profil élève créé avec succès !", "success")
         return redirect(url_for("main.view_student", student_id=student.id))
 
     return render_template("student_form.html")
 
 
+@bp.route("/students/<int:student_id>/unlock", methods=["GET", "POST"])
+def unlock_student(student_id: int):
+    student = _get_student_or_404(student_id)
+
+    if _parent_authenticated() or _student_authenticated(student_id):
+        return redirect(url_for("main.view_student", student_id=student_id))
+
+    if request.method == "POST":
+        pin = request.form.get("pin", "").strip()
+        if student.check_pin(pin):
+            _unlock_student_session(student_id)
+            flash("Profil débloqué, amuse-toi bien !", "success")
+            return redirect(url_for("main.view_student", student_id=student_id))
+        flash("Code incorrect. Réessaie.", "danger")
+
+    return render_template("student_unlock.html", student=student)
+
+
 @bp.route("/students/<int:student_id>")
 def view_student(student_id: int):
     student = _get_student_or_404(student_id)
+    if not (_student_authenticated(student_id) or _parent_authenticated()):
+        flash("Entre ton code secret pour accéder à ton profil.", "warning")
+        return redirect(url_for("main.unlock_student", student_id=student_id))
+
     sessions = (
         PracticeSession.query.filter_by(student_id=student.id)
         .order_by(PracticeSession.started_at.desc())
@@ -94,26 +175,50 @@ def view_student(student_id: int):
             if exercise.is_correct:
                 category_stats[exercise.category]["correct"] += 1
 
-    progress = {
-        category: {
+    category_lookup = {
+        category.code: category.name for category in QuestionCategory.query.order_by(QuestionCategory.name)
+    }
+
+    progress = [
+        {
+            "code": category,
+            "label": category_lookup.get(category, category.replace("_", " ").title()),
             "correct": stats["correct"],
             "total": stats["total"],
             "rate": (stats["correct"] / stats["total"] * 100) if stats["total"] else 0,
         }
         for category, stats in category_stats.items()
-    }
+    ]
+
+    upcoming_set = (
+        PreparedExerciseSet.query.filter_by(is_used=False, student_id=student.id)
+        .order_by(PreparedExerciseSet.created_at.asc())
+        .first()
+    )
+    if not upcoming_set:
+        upcoming_set = (
+            PreparedExerciseSet.query.filter_by(is_used=False, student_id=None)
+            .order_by(PreparedExerciseSet.created_at.asc())
+            .first()
+        )
 
     return render_template(
         "student_detail.html",
         student=student,
         sessions=sessions,
         progress=progress,
+        upcoming_set=upcoming_set,
+        category_lookup=category_lookup,
     )
 
 
 @bp.route("/students/<int:student_id>/sessions/new", methods=["GET", "POST"])
 def start_session(student_id: int):
     student = _get_student_or_404(student_id)
+    if not (_student_authenticated(student_id) or _parent_authenticated()):
+        flash("Débloque d'abord le profil avec le code PIN.", "warning")
+        return redirect(url_for("main.unlock_student", student_id=student_id))
+
     if request.method == "POST":
         try:
             time_limit = request.form.get("time_limit")
@@ -131,57 +236,56 @@ def start_session(student_id: int):
         session_obj = PracticeSession(
             student_id=student.id,
             time_limit_minutes=time_limit_value,
+            time_limit_seconds=(time_limit_value * 60) if time_limit_value else None,
             total_questions=question_count,
         )
         db.session.add(session_obj)
         db.session.flush()
 
-        targeted = (
-            PreparedExercise.query.filter_by(is_used=False, student_id=student.id)
-            .order_by(PreparedExercise.created_at.asc())
-            .all()
+        targeted_set = (
+            PreparedExerciseSet.query.filter_by(is_used=False, student_id=student.id)
+            .order_by(PreparedExerciseSet.created_at.asc())
+            .first()
         )
-        general = (
-            PreparedExercise.query.filter_by(is_used=False, student_id=None)
-            .order_by(PreparedExercise.created_at.asc())
-            .all()
+        general_set = (
+            PreparedExerciseSet.query.filter_by(is_used=False, student_id=None)
+            .order_by(PreparedExerciseSet.created_at.asc())
+            .first()
         )
-
-        prepared: List[PreparedExercise] = (targeted + general)[:question_count]
+        prepared_set = targeted_set or general_set
 
         exercises: List[ExercisePrompt] = []
-        prepared_used: List[PreparedExercise] = []
-        for prepared_ex in prepared:
-            exercises.append(
-                ExercisePrompt(
-                    prompt=prepared_ex.prompt,
-                    answer=prepared_ex.answer,
-                    category=prepared_ex.category or "custom",
+
+        if prepared_set:
+            if prepared_set.use_time_limit and prepared_set.time_limit_seconds:
+                session_obj.time_limit_seconds = prepared_set.time_limit_seconds
+                session_obj.time_limit_minutes = prepared_set.time_limit_seconds // 60
+
+            for index, question in enumerate(prepared_set.questions):
+                db.session.add(
+                    SessionExercise(
+                        session_id=session_obj.id,
+                        prompt=question.prompt,
+                        correct_answer=question.answer,
+                        category=question.category_code,
+                        display_order=index,
+                    )
                 )
-            )
-            prepared_used.append(prepared_ex)
-            if len(exercises) >= question_count:
-                break
-
-        if len(exercises) < question_count:
-            generated = generate_default_exercises(question_count - len(exercises))
-            exercises.extend(generated)
-
-        for index, exercise in enumerate(exercises):
-            db.session.add(
-                SessionExercise(
-                    session_id=session_obj.id,
-                    prompt=exercise.prompt,
-                    correct_answer=exercise.answer,
-                    category=exercise.category,
-                    display_order=index,
+            session_obj.total_questions = len(prepared_set.questions)
+            prepared_set.mark_used()
+        else:
+            exercises = generate_default_exercises(question_count)
+            for index, exercise in enumerate(exercises):
+                db.session.add(
+                    SessionExercise(
+                        session_id=session_obj.id,
+                        prompt=exercise.prompt,
+                        correct_answer=exercise.answer,
+                        category=exercise.category,
+                        display_order=index,
+                    )
                 )
-            )
-
-        session_obj.total_questions = len(exercises)
-
-        for prepared_ex in prepared_used:
-            prepared_ex.is_used = True
+            session_obj.total_questions = len(exercises)
 
         db.session.commit()
 
@@ -211,7 +315,9 @@ def play_session(session_id: int):
         flash("Session terminée ! Voici ton score.", "success")
         return redirect(url_for("main.session_summary", session_id=session_obj.id))
 
-    time_limit = session_obj.time_limit_minutes
+    time_limit = session_obj.time_limit_seconds
+    if not time_limit and session_obj.time_limit_minutes:
+        time_limit = session_obj.time_limit_minutes * 60
     return render_template(
         "session_play.html",
         session_obj=session_obj,
@@ -223,14 +329,22 @@ def play_session(session_id: int):
 @bp.route("/sessions/<int:session_id>/summary")
 def session_summary(session_id: int):
     session_obj = PracticeSession.query.get_or_404(session_id)
-    return render_template("session_summary.html", session_obj=session_obj)
+    category_lookup = {
+        category.code: category.name for category in QuestionCategory.query.all()
+    }
+    return render_template(
+        "session_summary.html",
+        session_obj=session_obj,
+        category_lookup=category_lookup,
+    )
 
 
 @bp.route("/parents/login", methods=["GET", "POST"])
 def parent_login():
     if request.method == "POST":
         password = request.form.get("password", "")
-        if password == Config.PARENT_PORTAL_PASSWORD:
+        credential = ParentCredential.query.first()
+        if credential and credential.check_password(password):
             session["parent_authenticated"] = True
             flash("Connexion réussie.", "success")
             return redirect(url_for("main.parent_dashboard"))
@@ -252,11 +366,12 @@ def parent_dashboard():
         return redirect(url_for("main.parent_login"))
 
     students = Student.query.order_by(Student.first_name).all()
-    prepared_exercises = (
-        PreparedExercise.query.filter_by(is_used=False)
-        .order_by(PreparedExercise.created_at.desc())
+    prepared_sets = (
+        PreparedExerciseSet.query.filter_by(is_used=False)
+        .order_by(PreparedExerciseSet.created_at.desc())
         .all()
     )
+    categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
 
     stats = []
     for student in students:
@@ -276,41 +391,205 @@ def parent_dashboard():
     return render_template(
         "parent_dashboard.html",
         stats=stats,
-        prepared_exercises=prepared_exercises,
+        prepared_sets=prepared_sets,
         students=students,
+        categories=categories,
     )
 
 
-@bp.route("/parents/prepared-exercises/new", methods=["POST"])
+@bp.route("/parents/prepared-exercises/new", methods=["GET", "POST"])
 def create_prepared_exercise():
     if not _parent_authenticated():
         flash("Accès refusé.", "danger")
         return redirect(url_for("main.parent_login"))
 
-    prompt = request.form.get("prompt", "").strip()
-    answer = request.form.get("answer", "").strip()
-    category = request.form.get("category", "custom").strip() or "custom"
-    student_id = request.form.get("student_id")
+    students = Student.query.order_by(Student.first_name).all()
+    categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
 
-    if not prompt or not answer:
-        flash("Le contenu de l'exercice et la réponse sont obligatoires.", "danger")
+    if request.method == "POST":
+        title = request.form.get("title", "").strip() or "Exercice préparé"
+        student_id = request.form.get("student_id")
+        use_time_limit = request.form.get("use_time_limit") == "on"
+        minutes_raw = request.form.get("limit_minutes", "0").strip()
+        seconds_raw = request.form.get("limit_seconds", "0").strip()
+
+        try:
+            minutes_value = int(minutes_raw or 0)
+            seconds_value = int(seconds_raw or 0)
+        except ValueError:
+            flash("Le temps doit être indiqué en nombres entiers.", "danger")
+            return redirect(url_for("main.create_prepared_exercise"))
+
+        total_seconds = minutes_value * 60 + seconds_value
+        if use_time_limit and total_seconds <= 0:
+            flash("Indiquez un temps supérieur à zéro.", "danger")
+            return redirect(url_for("main.create_prepared_exercise"))
+
+        prompts = request.form.getlist("question_prompt[]")
+        answers = request.form.getlist("question_answer[]")
+        categories_selected = request.form.getlist("question_category[]")
+
+        questions_payload = []
+        for prompt_text, answer_text, category_code in zip(
+            prompts, answers, categories_selected
+        ):
+            prompt_clean = prompt_text.strip()
+            answer_clean = answer_text.strip()
+            category_code = (category_code or "custom").strip() or "custom"
+            if prompt_clean and answer_clean:
+                questions_payload.append(
+                    (prompt_clean, answer_clean, category_code)
+                )
+
+        if not questions_payload:
+            flash("Ajoutez au moins une question valide.", "danger")
+            return redirect(url_for("main.create_prepared_exercise"))
+
+        student_obj: Optional[Student] = None
+        if student_id and student_id != "all":
+            try:
+                student_obj = Student.query.get(int(student_id))
+            except (TypeError, ValueError):
+                student_obj = None
+
+        exercise_set = PreparedExerciseSet(
+            title=title,
+            student=student_obj,
+            use_time_limit=use_time_limit,
+            time_limit_seconds=total_seconds if use_time_limit else None,
+        )
+        db.session.add(exercise_set)
+        db.session.flush()
+
+        for index, (prompt_clean, answer_clean, category_code) in enumerate(
+            questions_payload
+        ):
+            db.session.add(
+                PreparedExerciseQuestion(
+                    exercise_set_id=exercise_set.id,
+                    prompt=prompt_clean,
+                    answer=answer_clean,
+                    category_code=category_code,
+                    position=index,
+                )
+            )
+
+        db.session.commit()
+
+        flash("Exercice préparé enregistré.", "success")
         return redirect(url_for("main.parent_dashboard"))
 
-    student_obj = None
-    if student_id and student_id != "all":
-        try:
-            student_obj = Student.query.get(int(student_id))
-        except (TypeError, ValueError):
-            student_obj = None
-
-    prepared_ex = PreparedExercise(
-        prompt=prompt,
-        answer=answer,
-        category=category,
-        student=student_obj,
+    return render_template(
+        "prepared_exercise_form.html",
+        students=students,
+        categories=categories,
     )
-    db.session.add(prepared_ex)
-    db.session.commit()
 
-    flash("Exercice préparé enregistré.", "success")
+
+@bp.route("/parents/categories/new", methods=["POST"])
+def create_category():
+    if not _parent_authenticated():
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.parent_login"))
+
+    label = request.form.get("name", "").strip()
+    if not label:
+        flash("Le nom de la catégorie est requis.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    code = _slugify_label(label)
+    existing = QuestionCategory.query.filter(
+        (QuestionCategory.code == code) | (QuestionCategory.name == label)
+    ).first()
+    if existing:
+        flash("Cette catégorie existe déjà.", "warning")
+        return redirect(url_for("main.parent_dashboard"))
+
+    db.session.add(QuestionCategory(code=code, name=label))
+    db.session.commit()
+    flash("Catégorie créée.", "success")
+    return redirect(url_for("main.parent_dashboard"))
+
+
+@bp.route("/parents/categories/<int:category_id>/rename", methods=["POST"])
+def rename_category(category_id: int):
+    if not _parent_authenticated():
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.parent_login"))
+
+    category = QuestionCategory.query.get_or_404(category_id)
+    new_label = request.form.get("name", "").strip()
+    if not new_label:
+        flash("Le nom ne peut pas être vide.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    new_code = _slugify_label(new_label)
+    conflict = QuestionCategory.query.filter(
+        (QuestionCategory.id != category.id)
+        & ((QuestionCategory.code == new_code) | (QuestionCategory.name == new_label))
+    ).first()
+    if conflict:
+        flash("Une autre catégorie porte déjà ce nom.", "warning")
+        return redirect(url_for("main.parent_dashboard"))
+
+    old_code = category.code
+    category.name = new_label
+    category.code = new_code
+
+    SessionExercise.query.filter_by(category=old_code).update({"category": new_code})
+    PreparedExerciseQuestion.query.filter_by(category_code=old_code).update(
+        {"category_code": new_code}
+    )
+
+    db.session.commit()
+    flash("Catégorie mise à jour.", "success")
+    return redirect(url_for("main.parent_dashboard"))
+
+
+@bp.route("/parents/categories/<int:category_id>/delete", methods=["POST"])
+def delete_category(category_id: int):
+    if not _parent_authenticated():
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.parent_login"))
+
+    category = QuestionCategory.query.get_or_404(category_id)
+
+    in_use = SessionExercise.query.filter_by(category=category.code).first() or PreparedExerciseQuestion.query.filter_by(
+        category_code=category.code
+    ).first()
+    if in_use:
+        flash("Impossible de supprimer une catégorie utilisée.", "warning")
+        return redirect(url_for("main.parent_dashboard"))
+
+    db.session.delete(category)
+    db.session.commit()
+    flash("Catégorie supprimée.", "success")
+    return redirect(url_for("main.parent_dashboard"))
+
+
+@bp.route("/parents/password", methods=["POST"])
+def update_parent_password():
+    if not _parent_authenticated():
+        flash("Accès refusé.", "danger")
+        return redirect(url_for("main.parent_login"))
+
+    new_password = request.form.get("new_password", "").strip()
+    confirm_password = request.form.get("confirm_password", "").strip()
+
+    if len(new_password) < 6:
+        flash("Le mot de passe doit contenir au moins 6 caractères.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    if new_password != confirm_password:
+        flash("La confirmation ne correspond pas.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    credential = ParentCredential.query.first()
+    if not credential:
+        credential = ParentCredential()
+        db.session.add(credential)
+
+    credential.set_password(new_password)
+    db.session.commit()
+    flash("Mot de passe mis à jour.", "success")
     return redirect(url_for("main.parent_dashboard"))

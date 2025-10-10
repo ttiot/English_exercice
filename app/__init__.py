@@ -19,18 +19,22 @@ def create_app():
     app.config.from_object(Config)
 
     Path(app.instance_path).mkdir(parents=True, exist_ok=True)
+    Path(app.config["UPLOAD_FOLDER"]).mkdir(parents=True, exist_ok=True)
 
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
 
     from . import models  # noqa: F401
+    from .models import ensure_default_categories, ensure_parent_credentials
     from .routes import bp as main_bp
 
     app.register_blueprint(main_bp)
 
     with app.app_context():
         db.create_all()
+        ensure_default_categories()
+        ensure_parent_credentials(Config.PARENT_PORTAL_PASSWORD)
 
     @app.context_processor
     def inject_globals():

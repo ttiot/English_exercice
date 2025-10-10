@@ -17,6 +17,9 @@
       <div class="question">
         <h4>Question {{ loop.index }}</h4>
         <p>{{ exercise.prompt }}</p>
+        <p class="muted">
+          Catégorie : {{ category_lookup.get(exercise.category, exercise.category|replace('_', ' ')|capitalize) }}
+        </p>
         <p>Ta réponse : <strong>{{ exercise.student_answer or 'Non renseignée' }}</strong></p>
         <p>Bonne réponse : <strong>{{ exercise.correct_answer }}</strong></p>
         {% if exercise.is_correct %}

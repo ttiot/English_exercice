@@ -3,7 +3,7 @@
 {% block content %}
   <div class="card">
     <h2>Lancer une session pour {{ student.full_name() }}</h2>
-    <p>Choisis les paramètres de la session. Tu peux définir un temps limite ou non.</p>
+    <p>Choisis les paramètres de la session. S'il existe un exercice préparé pour toi, il sera proposé en priorité.</p>
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label for="question_count">Nombre de questions</label>

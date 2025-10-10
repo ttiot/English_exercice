@@ -16,15 +16,27 @@
   <section class="card">
     <h3>Profils récents</h3>
     {% if students %}
-      <div class="grid">
+      <div class="student-grid">
         {% for student in students %}
-          <div class="stats-card">
-            <h3>{{ student.full_name() }}</h3>
-            {% if student.age %}
-              <span class="badge">{{ student.age }} ans</span>
-            {% endif %}
-            <a href="{{ url_for('main.view_student', student_id=student.id) }}">Voir le profil</a>
-          </div>
+          {% set unlocked = student.id in unlocked_students %}
+          <a
+            class="student-card"
+            href="{{ url_for('main.view_student', student_id=student.id) if unlocked else url_for('main.unlock_student', student_id=student.id) }}"
+          >
+            <div class="student-avatar">
+              <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
+            </div>
+            <div class="student-card-body">
+              <h3>{{ student.full_name() }}</h3>
+              <p class="muted">
+                {% if student.age %}{{ student.age }} ans • {% endif %}
+                {{ 'Profil déverrouillé' if unlocked else 'Code PIN requis' }}
+              </p>
+              <span class="badge {{ 'badge-unlocked' if unlocked else 'badge-locked' }}">
+                {% if unlocked %}Accéder au profil{% else %}Débloquer{% endif %}
+              </span>
+            </div>
+          </a>
         {% endfor %}
       </div>
     {% else %}

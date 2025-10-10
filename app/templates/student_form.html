@@ -3,21 +3,56 @@
 {% block content %}
   <div class="card">
     <h2>Créer un nouveau profil élève</h2>
-    <form method="post">
+    <p>Ajoute une photo et définis un code PIN à 4 chiffres pour sécuriser l'accès.</p>
+    <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
       <label for="first_name">Prénom *</label>
       <input id="first_name" name="first_name" required placeholder="Ex. Léa" />
 
       <label for="last_name">Nom</label>
       <input id="last_name" name="last_name" placeholder="Ex. Martin" />
 
+      <label for="avatar">Photo de profil</label>
+      <input id="avatar" name="avatar" type="file" accept="image/*" />
+
       <label for="age">Âge</label>
-      <input id="age" name="age" type="number" min="6" max="13" />
+      <input id="age" name="age" type="number" min="6" max="13" placeholder="10" />
 
       <label for="goals">Objectifs</label>
       <textarea id="goals" name="goals" rows="3" placeholder="Ex. Réviser les nombres, travailler le vocabulaire..."></textarea>
 
+      <div class="grid-two">
+        <div>
+          <label for="pin">Code PIN *</label>
+          <input
+            id="pin"
+            name="pin"
+            type="password"
+            pattern="\d{4}"
+            maxlength="4"
+            inputmode="numeric"
+            required
+            placeholder="4 chiffres"
+          />
+        </div>
+        <div>
+          <label for="pin_confirm">Confirmer *</label>
+          <input
+            id="pin_confirm"
+            name="pin_confirm"
+            type="password"
+            pattern="\d{4}"
+            maxlength="4"
+            inputmode="numeric"
+            required
+            placeholder="Répéter le code"
+          />
+        </div>
+      </div>
+
       <button class="btn btn-primary" type="submit">Créer le profil</button>
+      <a class="btn btn-secondary" href="{{ url_for('main.index') }}">Annuler</a>
     </form>
   </div>
 {% endblock %}

@@ -4,12 +4,12 @@ Application web Flask pour proposer des exercices d'anglais adaptés à un élè
 
 ## Fonctionnalités
 
-- Création de profils élèves sans authentification.
+- Création de profils élèves sécurisés par PIN à 4 chiffres avec avatar personnalisable.
 - Sessions d'entraînement configurables (nombre de questions, durée facultative).
 - Génération d'exercices variés (nombres, vocabulaire, traductions) et priorité aux exercices préparés par les parents.
 - Correction globale en fin de session et historique des réponses.
-- Tableau de bord élève avec suivi de progression par catégorie.
-- Espace parents protégé par mot de passe pour suivre les progrès et préparer des exercices personnalisés.
+- Tableau de bord élève avec suivi de progression par catégorie et aperçu des exercices à venir.
+- Espace parents protégé par mot de passe (personnalisable) pour suivre les progrès, gérer les catégories de questions et préparer des séries d'exercices complètes.
 
 ## Démarrage local
 

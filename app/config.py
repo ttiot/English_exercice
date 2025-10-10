@@ -14,3 +14,9 @@ class Config:
     SESSION_COOKIE_SECURE = False
     REMEMBER_COOKIE_DURATION = timedelta(days=30)
     PARENT_PORTAL_PASSWORD = os.environ.get("PARENT_PORTAL_PASSWORD", "parents123")
+
+    UPLOAD_FOLDER = os.environ.get(
+        "UPLOAD_FOLDER",
+        str((_base_dir / "static" / "uploads").resolve()),
+    )
+    ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}

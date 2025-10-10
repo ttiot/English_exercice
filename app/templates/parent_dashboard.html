@@ -2,11 +2,16 @@
 {% block title %}Tableau de bord parents{% endblock %}
 {% block content %}
   <div class="card">
-    <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
-      <h2>Espace parents</h2>
-      <a class="btn btn-secondary" href="{{ url_for('main.parent_logout') }}">Se déconnecter</a>
+    <div class="card-header-actions">
+      <div>
+        <h2>Espace parents</h2>
+        <p class="muted">Visualisez la progression des élèves, gérez les catégories et programmez les prochains entraînements.</p>
+      </div>
+      <div class="card-actions">
+        <a class="btn btn-primary" href="{{ url_for('main.create_prepared_exercise') }}">Nouvel exercice préparé</a>
+        <a class="btn btn-secondary" href="{{ url_for('main.parent_logout') }}">Se déconnecter</a>
+      </div>
     </div>
-    <p>Visualisez la progression des élèves et préparez des exercices ciblés.</p>
   </div>
 
   <div class="card">
@@ -37,54 +42,82 @@
     {% endif %}
   </div>
 
-  <div class="card">
-    <h3>Préparer un exercice</h3>
-    <form method="post" action="{{ url_for('main.create_prepared_exercise') }}">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-      <label for="prompt">Consigne *</label>
-      <textarea id="prompt" name="prompt" rows="2" required placeholder="Ex. Traduire 'J'ai une petite sœur'."></textarea>
+  <div class="responsive-grid">
+    <div class="card">
+      <h3>Catégories de questions</h3>
+      <form class="inline-form" method="post" action="{{ url_for('main.create_category') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input name="name" placeholder="Nouvelle catégorie" required />
+        <button class="btn btn-primary" type="submit">Ajouter</button>
+      </form>
+      {% if categories %}
+        <ul class="category-list">
+          {% for category in categories %}
+            <li>
+              <strong>{{ category.name }}</strong>
+              <span class="muted">code : {{ category.code }}</span>
+              <details>
+                <summary>Modifier</summary>
+                <form method="post" action="{{ url_for('main.rename_category', category_id=category.id) }}" class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <input name="name" value="{{ category.name }}" required />
+                  <button class="btn btn-primary" type="submit">Renommer</button>
+                </form>
+                <form method="post" action="{{ url_for('main.delete_category', category_id=category.id) }}" class="inline-form">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <button class="btn btn-danger" type="submit" onclick="return confirm('Supprimer cette catégorie ?');">Supprimer</button>
+                </form>
+              </details>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Aucune catégorie enregistrée.</p>
+      {% endif %}
+    </div>
 
-      <label for="answer">Réponse attendue *</label>
-      <input id="answer" name="answer" required placeholder="Ex. I have a little sister" />
-
-      <label for="category">Catégorie</label>
-      <select id="category" name="category">
-        <option value="custom">Personnalisé</option>
-        <option value="number_word">Nombres ➜ mots</option>
-        <option value="word_number">Mots ➜ nombres</option>
-        <option value="translate_fr_en">Traduction FR ➜ EN</option>
-        <option value="translate_en_fr">Traduction EN ➜ FR</option>
-        <option value="sentence_fr_en">Phrases FR ➜ EN</option>
-        <option value="sentence_en_fr">Phrases EN ➜ FR</option>
-      </select>
-
-      <label for="student_id">Attribuer à</label>
-      <select id="student_id" name="student_id">
-        <option value="all">Tous les élèves</option>
-        {% for student in students %}
-          <option value="{{ student.id }}">{{ student.full_name() }}</option>
-        {% endfor %}
-      </select>
-
-      <button class="btn btn-primary" type="submit">Enregistrer l'exercice</button>
-    </form>
+    <div class="card">
+      <h3>Mot de passe parents</h3>
+      <p>Personnalisez le mot de passe pour sécuriser l'accès.</p>
+      <form method="post" action="{{ url_for('main.update_parent_password') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label for="new_password">Nouveau mot de passe *</label>
+        <input id="new_password" name="new_password" type="password" minlength="6" required />
+        <label for="confirm_password">Confirmer *</label>
+        <input id="confirm_password" name="confirm_password" type="password" minlength="6" required />
+        <button class="btn btn-primary" type="submit">Mettre à jour</button>
+      </form>
+    </div>
   </div>
 
   <div class="card">
-    <h3>Exercices en attente</h3>
-    {% if prepared_exercises %}
-      <ul>
-        {% for exercise in prepared_exercises %}
-          <li>
-            {{ exercise.prompt }} – <strong>{{ exercise.answer }}</strong>
-            {% if exercise.student %}
-              (Assigné à {{ exercise.student.full_name() }})
-            {% else %}
-              (Tous les élèves)
-            {% endif %}
-          </li>
+    <h3>Exercices préparés en attente</h3>
+    {% if prepared_sets %}
+      <div class="prepared-list">
+        {% for exercise_set in prepared_sets %}
+          <article class="prepared-item">
+            <header>
+              <h4>{{ exercise_set.title }}</h4>
+              <span class="badge">{{ exercise_set.questions|length }} question{{ 's' if exercise_set.questions|length > 1 else '' }}</span>
+            </header>
+            <p class="muted">
+              {% if exercise_set.student %}
+                Assigné à {{ exercise_set.student.full_name() }}
+              {% else %}
+                Proposé à tous les élèves
+              {% endif %}
+              {% if exercise_set.use_time_limit and exercise_set.time_limit_seconds %}
+                • Temps limite :
+                {% set minutes = exercise_set.time_limit_seconds // 60 %}
+                {% set seconds = exercise_set.time_limit_seconds % 60 %}
+                {{ minutes }} min {{ seconds }} s
+              {% else %}
+                • Sans limite
+              {% endif %}
+            </p>
+          </article>
         {% endfor %}
-      </ul>
+      </div>
     {% else %}
       <p>Aucun exercice préparé pour le moment.</p>
     {% endif %}
