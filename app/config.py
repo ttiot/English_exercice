@@ -1,12 +1,15 @@
 import os
 from datetime import timedelta
+from pathlib import Path
 
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-secret-key")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL", f"sqlite:///{os.path.join(os.getcwd(), 'instance', 'app.db')}"
-    )
+
+    _base_dir = Path(__file__).resolve().parent
+    _default_db = _base_dir.parent / "instance" / "app.db"
+    SQLALCHEMY_DATABASE_URI = os.environ.get("DATABASE_URL") or f"sqlite:///{_default_db}"
+
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SESSION_COOKIE_SECURE = False
     REMEMBER_COOKIE_DURATION = timedelta(days=30)
