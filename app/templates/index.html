@@ -9,7 +9,11 @@
     </p>
     <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
       <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
-      <a class="btn btn-secondary" href="{{ url_for('main.parent_login') }}">Espace parents</a>
+      <a
+        class="btn btn-secondary"
+        href="{{ url_for('main.parent_dashboard') if parent_authenticated else url_for('main.parent_login') }}"
+        >Espace parents</a
+      >
     </div>
   </section>
 

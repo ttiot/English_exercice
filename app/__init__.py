@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from flask import Flask
+from flask import Flask, session
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
@@ -43,9 +43,19 @@ def create_app():
 
     @app.context_processor
     def inject_globals():
+        unlocked_raw = session.get("unlocked_students", []) or []
+        unlocked_ids = set()
+        for value in unlocked_raw:
+            try:
+                unlocked_ids.add(int(value))
+            except (TypeError, ValueError):
+                continue
+
         return {
             "current_year": datetime.utcnow().year,
             "csrf_token": generate_csrf,
+            "parent_authenticated": session.get("parent_authenticated", False),
+            "unlocked_students": unlocked_ids,
         }
 
     @app.after_request

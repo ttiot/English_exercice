@@ -4,6 +4,13 @@
   <div class="card">
     <h2>Modifier les informations de l'élève</h2>
     <p class="muted">Mettez à jour le prénom, la photo et les objectifs pédagogiques.</p>
+    <div class="card-actions">
+      <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.lock_student', student_id=student.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="next" value="{{ url_for('main.index') }}" />
+        <button class="btn btn-secondary" type="submit">Déconnexion</button>
+      </form>
+    </div>
     <form method="post" enctype="multipart/form-data" action="{{ url_for('main.manage_student', student_id=student.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="action" value="profile" />

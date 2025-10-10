@@ -16,9 +16,19 @@
   <body>
     <nav class="navbar">
       <h1><a href="{{ url_for('main.index') }}">English Explorer</a></h1>
-      <div>
+      <div class="navbar-actions">
         <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
-        <a class="btn btn-secondary" href="{{ url_for('main.parent_login') }}">Espace Parents</a>
+        <a
+          class="btn btn-secondary"
+          href="{{ url_for('main.parent_dashboard') if parent_authenticated else url_for('main.parent_login') }}"
+          >Espace Parents</a
+        >
+        {% if parent_authenticated %}
+          <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.parent_logout') }}">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button class="btn btn-secondary" type="submit">Déconnexion</button>
+          </form>
+        {% endif %}
       </div>
     </nav>
     <div class="container">

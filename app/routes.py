@@ -59,6 +59,18 @@ def _unlock_student_session(student_id: int) -> None:
         session.modified = True
 
 
+def _lock_student_session(student_id: int) -> None:
+    unlocked = session.get("unlocked_students", [])
+    student_key = str(student_id)
+    if student_key in unlocked:
+        unlocked.remove(student_key)
+        if unlocked:
+            session["unlocked_students"] = unlocked
+        else:
+            session.pop("unlocked_students", None)
+        session.modified = True
+
+
 def _slugify_label(label: str) -> str:
     slug = secure_filename(label.lower())
     return slug.replace("-", "_") or f"category_{uuid4().hex[:6]}"
@@ -165,6 +177,25 @@ def unlock_student(student_id: int):
         flash("Code incorrect. Réessaie.", "danger")
 
     return render_template("student_unlock.html", student=student)
+
+
+@bp.route("/students/<int:student_id>/lock", methods=["POST"])
+def lock_student(student_id: int):
+    _get_student_or_404(student_id)
+    parent_ok = _parent_authenticated()
+    student_ok = _student_authenticated(student_id)
+
+    if not (parent_ok or student_ok):
+        flash("Ce profil est déjà verrouillé.", "info")
+        return redirect(url_for("main.unlock_student", student_id=student_id))
+
+    _lock_student_session(student_id)
+    flash("Le profil a été verrouillé.", "info")
+
+    next_url = request.form.get("next")
+    if next_url and next_url.startswith("/"):
+        return redirect(next_url)
+    return redirect(url_for("main.index"))
 
 
 @bp.route("/students/<int:student_id>")
@@ -466,10 +497,14 @@ def session_summary(session_id: int):
 
 @bp.route("/parents/login", methods=["GET", "POST"])
 def parent_login():
+    if _parent_authenticated():
+        return redirect(url_for("main.parent_dashboard"))
+
     if request.method == "POST":
         password = request.form.get("password", "")
         credential = ParentCredential.query.first()
         if credential and credential.check_password(password):
+            session.permanent = True
             session["parent_authenticated"] = True
             flash("Connexion réussie.", "success")
             return redirect(url_for("main.parent_dashboard"))
@@ -477,9 +512,10 @@ def parent_login():
     return render_template("parent_login.html")
 
 
-@bp.route("/parents/logout")
+@bp.route("/parents/logout", methods=["POST"])
 def parent_logout():
     session.pop("parent_authenticated", None)
+    session.pop("unlocked_students", None)
     flash("Vous êtes déconnecté.", "info")
     return redirect(url_for("main.index"))
 

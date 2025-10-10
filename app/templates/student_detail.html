@@ -15,10 +15,19 @@
         {% if student.goals %}
           <p><strong>Objectifs :</strong> {{ student.goals }}</p>
         {% endif %}
-        <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
-        {% if can_manage %}
-          <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">Gérer le profil</a>
-        {% endif %}
+        <div class="student-actions">
+          <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+          {% if can_manage %}
+            <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">Gérer le profil</a>
+          {% endif %}
+          {% if can_manage %}
+            <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.lock_student', student_id=student.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input type="hidden" name="next" value="{{ url_for('main.index') }}" />
+              <button class="btn btn-secondary" type="submit">Déconnexion</button>
+            </form>
+          {% endif %}
+        </div>
       </div>
     </div>
   </div>

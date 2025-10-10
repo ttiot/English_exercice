@@ -9,7 +9,10 @@
       </div>
       <div class="card-actions">
         <a class="btn btn-primary" href="{{ url_for('main.create_prepared_exercise') }}">Nouvel exercice préparé</a>
-        <a class="btn btn-secondary" href="{{ url_for('main.parent_logout') }}">Se déconnecter</a>
+        <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.parent_logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <button class="btn btn-secondary" type="submit">Déconnexion</button>
+        </form>
       </div>
     </div>
   </div>
