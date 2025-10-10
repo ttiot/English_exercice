@@ -64,6 +64,18 @@ def _slugify_label(label: str) -> str:
     return slug.replace("-", "_") or f"category_{uuid4().hex[:6]}"
 
 
+def _delete_avatar_file(filename: Optional[str]) -> None:
+    if not filename:
+        return
+    upload_folder = Path(current_app.config["UPLOAD_FOLDER"])
+    candidate = upload_folder / filename
+    if candidate.exists():
+        try:
+            candidate.unlink()
+        except OSError:
+            current_app.logger.warning("Impossible de supprimer l'ancien avatar %s", candidate)
+
+
 @bp.route("/")
 def index():
     students = Student.query.order_by(Student.created_at.desc()).all()
@@ -158,7 +170,9 @@ def unlock_student(student_id: int):
 @bp.route("/students/<int:student_id>")
 def view_student(student_id: int):
     student = _get_student_or_404(student_id)
-    if not (_student_authenticated(student_id) or _parent_authenticated()):
+    parent_ok = _parent_authenticated()
+    student_ok = _student_authenticated(student_id)
+    if not (student_ok or parent_ok):
         flash("Entre ton code secret pour accéder à ton profil.", "warning")
         return redirect(url_for("main.unlock_student", student_id=student_id))
 
@@ -209,6 +223,97 @@ def view_student(student_id: int):
         progress=progress,
         upcoming_set=upcoming_set,
         category_lookup=category_lookup,
+        can_manage=parent_ok or student_ok,
+    )
+
+
+@bp.route("/students/<int:student_id>/settings", methods=["GET", "POST"])
+def manage_student(student_id: int):
+    student = _get_student_or_404(student_id)
+
+    parent_ok = _parent_authenticated()
+    student_ok = _student_authenticated(student_id)
+    if not (parent_ok or student_ok):
+        flash("Débloque d'abord le profil avec le code PIN.", "warning")
+        return redirect(url_for("main.unlock_student", student_id=student_id))
+
+    if request.method == "POST":
+        action = request.form.get("action", "profile")
+
+        if action == "pin":
+            current_pin = request.form.get("current_pin", "").strip()
+            new_pin = request.form.get("new_pin", "").strip()
+            confirm_pin = request.form.get("confirm_pin", "").strip()
+
+            if not new_pin or not new_pin.isdigit() or len(new_pin) != 4:
+                flash("Le nouveau code PIN doit contenir exactement 4 chiffres.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
+
+            if new_pin != confirm_pin:
+                flash("La confirmation du code PIN ne correspond pas.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
+
+            if not parent_ok and not student.check_pin(current_pin):
+                flash("L'ancien code PIN est incorrect.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
+
+            student.set_pin(new_pin)
+            db.session.commit()
+            flash("Code PIN mis à jour avec succès.", "success")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        # Default to profile update
+        first_name = request.form.get("first_name", "").strip()
+        last_name = request.form.get("last_name", "").strip()
+        goals = request.form.get("goals", "").strip()
+        age_raw = request.form.get("age", "").strip()
+        remove_avatar = request.form.get("remove_avatar") == "on"
+
+        if not first_name:
+            flash("Le prénom est obligatoire.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        try:
+            age_value = int(age_raw) if age_raw else None
+        except ValueError:
+            flash("L'âge doit être un nombre.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        avatar_file = request.files.get("avatar")
+        new_avatar_filename: Optional[str] = None
+        if avatar_file and avatar_file.filename:
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+            if extension not in current_app.config["ALLOWED_IMAGE_EXTENSIONS"]:
+                flash("Format d'image non pris en charge.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
+
+            new_avatar_filename = f"{uuid4().hex}.{extension}"
+            destination = Path(current_app.config["UPLOAD_FOLDER"]) / new_avatar_filename
+            avatar_file.save(destination)
+
+        if remove_avatar and student.avatar_filename:
+            _delete_avatar_file(student.avatar_filename)
+            student.avatar_filename = None
+
+        if new_avatar_filename:
+            if student.avatar_filename and student.avatar_filename != new_avatar_filename:
+                _delete_avatar_file(student.avatar_filename)
+            student.avatar_filename = new_avatar_filename
+
+        student.first_name = first_name
+        student.last_name = last_name or None
+        student.goals = goals or None
+        student.age = age_value
+
+        db.session.commit()
+        flash("Profil mis à jour.", "success")
+        return redirect(url_for("main.manage_student", student_id=student.id))
+
+    return render_template(
+        "student_settings.html",
+        student=student,
+        parent_ok=parent_ok,
     )
 
 

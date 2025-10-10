@@ -24,6 +24,7 @@
             <th>Sessions complétées</th>
             <th>Score moyen</th>
             <th>Accès</th>
+            <th>Gestion</th>
           </tr>
         </thead>
         <tbody>
@@ -33,7 +34,8 @@
               <td>{{ item.total_sessions }}</td>
               <td>{{ item.average_score }}%</td>
               <td><a href="{{ url_for('main.view_student', student_id=item.student.id) }}">Voir le profil</a></td>
-            </tr>
+              <td><a href="{{ url_for('main.manage_student', student_id=item.student.id) }}">Modifier</a></td>
+          </tr>
           {% endfor %}
         </tbody>
       </table>

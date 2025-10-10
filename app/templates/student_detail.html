@@ -16,6 +16,9 @@
           <p><strong>Objectifs :</strong> {{ student.goals }}</p>
         {% endif %}
         <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+        {% if can_manage %}
+          <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">Gérer le profil</a>
+        {% endif %}
       </div>
     </div>
   </div>
