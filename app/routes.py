@@ -404,6 +404,15 @@ def play_session(session_id: int):
     session_obj = PracticeSession.query.get_or_404(session_id)
     student = session_obj.student
 
+    if not student:
+        abort(404)
+
+    parent_ok = _parent_authenticated()
+    student_ok = _student_authenticated(student.id)
+    if not (parent_ok or student_ok):
+        flash("Débloque d'abord le profil avec le code PIN.", "warning")
+        return redirect(url_for("main.unlock_student", student_id=student.id))
+
     if request.method == "POST":
         correct_answers = 0
         for exercise in session_obj.exercises:
@@ -434,6 +443,16 @@ def play_session(session_id: int):
 @bp.route("/sessions/<int:session_id>/summary")
 def session_summary(session_id: int):
     session_obj = PracticeSession.query.get_or_404(session_id)
+    student = session_obj.student
+    if not student:
+        abort(404)
+
+    parent_ok = _parent_authenticated()
+    student_ok = _student_authenticated(student.id)
+    if not (parent_ok or student_ok):
+        flash("Débloque d'abord le profil avec le code PIN.", "warning")
+        return redirect(url_for("main.unlock_student", student_id=student.id))
+
     category_lookup = {
         category.code: category.name for category in QuestionCategory.query.all()
     }
