@@ -1,0 +1,19 @@
+{% extends 'base.html' %}
+{% block title %}Nouvelle session{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Lancer une session pour {{ student.full_name() }}</h2>
+    <p>Choisis les paramètres de la session. S'il existe un exercice préparé pour toi, il sera proposé en priorité.</p>
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label for="question_count">Nombre de questions</label>
+      <input id="question_count" name="question_count" type="number" min="5" max="40" value="20" />
+
+      <label for="time_limit">Temps limite (minutes)</label>
+      <input id="time_limit" name="time_limit" type="number" min="0" placeholder="Ex. 15" />
+
+      <button class="btn btn-primary" type="submit">Commencer</button>
+      <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">Annuler</a>
+    </form>
+  </div>
+{% endblock %}

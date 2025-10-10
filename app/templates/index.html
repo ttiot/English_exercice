@@ -1,0 +1,76 @@
+{% extends 'base.html' %}
+{% block title %}English Explorer - Accueil{% endblock %}
+{% block content %}
+  <section class="card">
+    <h2>Bienvenue sur English Explorer</h2>
+    <p>
+      Une plateforme d'exercices d'anglais ludique et suivie pour les élèves de 6ème.
+      Crée ton profil, lance une session d'entraînement et découvre ta progression.
+    </p>
+    <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
+      <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
+      <a
+        class="btn btn-secondary"
+        href="{{ url_for('main.parent_dashboard') if parent_authenticated else url_for('main.parent_login') }}"
+        >Espace parents</a
+      >
+    </div>
+  </section>
+
+  <section class="card">
+    <h3>Profils récents</h3>
+    {% if students %}
+      <div class="student-grid">
+        {% for student in students %}
+          {% set unlocked = student.id in unlocked_students %}
+          <a
+            class="student-card"
+            href="{{ url_for('main.view_student', student_id=student.id) if unlocked else url_for('main.unlock_student', student_id=student.id) }}"
+          >
+            <div class="student-avatar">
+              <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
+            </div>
+            <div class="student-card-body">
+              <h3>{{ student.full_name() }}</h3>
+              <p class="muted">
+                {% if student.age %}{{ student.age }} ans • {% endif %}
+                {{ 'Profil déverrouillé' if unlocked else 'Code PIN requis' }}
+              </p>
+              <span class="badge {{ 'badge-unlocked' if unlocked else 'badge-locked' }}">
+                {% if unlocked %}Accéder au profil{% else %}Débloquer{% endif %}
+              </span>
+            </div>
+          </a>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p>Aucun élève pour le moment. Commencez par créer un profil !</p>
+    {% endif %}
+  </section>
+
+  <section class="card">
+    <h3>Dernières sessions</h3>
+    {% if latest_sessions %}
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Élève</th>
+            <th>Date</th>
+            <th>Score</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for session in latest_sessions %}
+            <tr>
+              <td>{{ session.student.full_name() }}</td>
+              <td>{{ session.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
+              <td>{{ session.correct_answers }}/{{ session.total_questions }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p>Pas encore de session enregistrée.</p>
+    {% endif %}
+  </section>
+{% endblock %}

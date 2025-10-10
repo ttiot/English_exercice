@@ -1,0 +1,107 @@
+{% extends 'base.html' %}
+{% block title %}Gérer le profil de {{ student.full_name() }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Modifier les informations de l'élève</h2>
+    <p class="muted">Mettez à jour le prénom, la photo et les objectifs pédagogiques.</p>
+    <div class="card-actions">
+      <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.lock_student', student_id=student.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="next" value="{{ url_for('main.index') }}" />
+        <button class="btn btn-secondary" type="submit">Déconnexion</button>
+      </form>
+    </div>
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('main.manage_student', student_id=student.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="action" value="profile" />
+
+      <label for="first_name">Prénom *</label>
+      <input id="first_name" name="first_name" value="{{ student.first_name }}" required />
+
+      <label for="last_name">Nom</label>
+      <input id="last_name" name="last_name" value="{{ student.last_name or '' }}" />
+
+      <div class="avatar-settings">
+        <div class="student-avatar-large">
+          <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar actuel" />
+        </div>
+        <div class="avatar-settings-fields">
+          <label for="avatar">Nouvelle photo</label>
+          <input id="avatar" name="avatar" type="file" accept="image/*" />
+          {% if student.avatar_filename %}
+            <label class="checkbox-inline">
+              <input type="checkbox" name="remove_avatar" /> Supprimer la photo actuelle
+            </label>
+          {% endif %}
+        </div>
+      </div>
+
+      <label for="age">Âge</label>
+      <input id="age" name="age" type="number" min="6" max="13" value="{{ student.age or '' }}" />
+
+      <label for="goals">Objectifs</label>
+      <textarea id="goals" name="goals" rows="3" placeholder="Ex. Réviser les nombres, travailler le vocabulaire...">{{ student.goals or '' }}</textarea>
+
+      <div class="form-actions">
+        <button class="btn btn-primary" type="submit">Enregistrer les modifications</button>
+        <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">Retour</a>
+      </div>
+    </form>
+  </div>
+
+  <div class="card">
+    <h2>Changer le code PIN</h2>
+    <p class="muted">Définissez un nouveau code à 4 chiffres pour sécuriser le profil de l'élève.</p>
+    <form method="post" action="{{ url_for('main.manage_student', student_id=student.id) }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="action" value="pin" />
+
+      {% if not parent_ok %}
+        <label for="current_pin">Code PIN actuel *</label>
+        <input
+          id="current_pin"
+          name="current_pin"
+          type="password"
+          pattern="\d{4}"
+          maxlength="4"
+          inputmode="numeric"
+          required
+          placeholder="Entrez le code actuel"
+        />
+      {% else %}
+        <p class="muted">En tant que parent, vous pouvez redéfinir le code sans saisir l'ancien.</p>
+      {% endif %}
+
+      <div class="grid-two">
+        <div>
+          <label for="new_pin">Nouveau code PIN *</label>
+          <input
+            id="new_pin"
+            name="new_pin"
+            type="password"
+            pattern="\d{4}"
+            maxlength="4"
+            inputmode="numeric"
+            required
+            placeholder="4 chiffres"
+          />
+        </div>
+        <div>
+          <label for="confirm_pin">Confirmer *</label>
+          <input
+            id="confirm_pin"
+            name="confirm_pin"
+            type="password"
+            pattern="\d{4}"
+            maxlength="4"
+            inputmode="numeric"
+            required
+            placeholder="Répéter le code"
+          />
+        </div>
+      </div>
+
+      <button class="btn btn-primary" type="submit">Mettre à jour le code PIN</button>
+    </form>
+  </div>
+{% endblock %}

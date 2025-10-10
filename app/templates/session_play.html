@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Session d'exercices{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Session d'entraînement pour {{ student.full_name() }}</h2>
+    {% if time_limit %}
+      {% set minutes = time_limit // 60 %}
+      {% set seconds = time_limit % 60 %}
+      <p class="timer">Temps restant : <span id="timer" data-seconds="{{ time_limit }}">{{ minutes }} min {{ seconds }} s</span></p>
+    {% endif %}
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      {% for exercise in session_obj.exercises %}
+        <div class="question">
+          <h4>Question {{ loop.index }}</h4>
+          <p>{{ exercise.prompt }}</p>
+          <textarea
+            name="answer_{{ exercise.id }}"
+            rows="2"
+            placeholder="Ta réponse"
+          ></textarea>
+        </div>
+      {% endfor %}
+      <button class="btn btn-primary" type="submit">Terminer la session</button>
+    </form>
+  </div>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  {% if time_limit %}
+    <script>
+      const timerElement = document.getElementById('timer');
+      let secondsLeft = parseInt(timerElement.dataset.seconds, 10);
+
+      const formatTime = (totalSeconds) => {
+        const minutes = Math.floor(totalSeconds / 60);
+        const seconds = totalSeconds % 60;
+        return `${minutes} min ${seconds.toString().padStart(2, '0')} s`;
+      };
+
+      const updateDisplay = () => {
+        timerElement.textContent = formatTime(Math.max(secondsLeft, 0));
+      };
+
+      updateDisplay();
+
+      const countdown = setInterval(() => {
+        secondsLeft -= 1;
+        if (secondsLeft <= 0) {
+          clearInterval(countdown);
+          updateDisplay();
+          alert('Le temps est écoulé ! Les réponses vont être envoyées.');
+          const form = document.querySelector('form');
+          form.querySelectorAll('[required]').forEach((field) => field.removeAttribute('required'));
+          form.submit();
+        } else {
+          updateDisplay();
+        }
+      }, 1000);
+    </script>
+  {% endif %}
+{% endblock %}
