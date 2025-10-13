@@ -74,8 +74,8 @@ def create_app():
             print(f"Répertoire de données OK: {data_dir}")
             print(f"URI de base de données: {app.config['SQLALCHEMY_DATABASE_URI']}")
             
-            if app.config.get("FLASK_ENV") == "development":
-                db.create_all()
+            # Créer toutes les tables si elles n'existent pas
+            db.create_all()
             ensure_schema_migrations()
             ensure_default_categories()
             ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
