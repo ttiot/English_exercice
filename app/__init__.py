@@ -1,3 +1,4 @@
+import os
 from datetime import datetime
 from pathlib import Path
 
@@ -59,11 +60,31 @@ def create_app():
     # --- Initialisation base ---
     # En prod, on préfère "flask db upgrade" (Alembic) au lieu de create_all
     with app.app_context():
-        if app.config.get("FLASK_ENV") == "development":
-            db.create_all()
-        ensure_schema_migrations()
-        ensure_default_categories()
-        ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
+        try:
+            # Vérifier que le répertoire de données existe et est accessible
+            data_dir = Path(app.config["DATA_DIR"])
+            if not data_dir.exists():
+                print(f"Création du répertoire de données: {data_dir}")
+                data_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Vérifier les permissions d'écriture
+            if not data_dir.is_dir() or not os.access(data_dir, os.W_OK):
+                raise PermissionError(f"Impossible d'écrire dans le répertoire: {data_dir}")
+            
+            print(f"Répertoire de données OK: {data_dir}")
+            print(f"URI de base de données: {app.config['SQLALCHEMY_DATABASE_URI']}")
+            
+            if app.config.get("FLASK_ENV") == "development":
+                db.create_all()
+            ensure_schema_migrations()
+            ensure_default_categories()
+            ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
+            
+        except Exception as e:
+            print(f"Erreur lors de l'initialisation de la base de données: {e}")
+            print(f"Répertoire de données: {app.config.get('DATA_DIR')}")
+            print(f"URI de base de données: {app.config.get('SQLALCHEMY_DATABASE_URI')}")
+            raise
 
     # --- Healthcheck ---
     @app.get("/health")

@@ -21,9 +21,14 @@ class Config:
 
     # DB: sqlite absolu => 4 slashes après sqlite:
     DEFAULT_SQLITE_PATH = DATA_DIR / "app.db"
-    SQLALCHEMY_DATABASE_URI = (
-        os.environ.get("DATABASE_URL") or f"sqlite:///{DEFAULT_SQLITE_PATH}"
-    )
+    
+    # Si DATABASE_URL est fournie, on l'utilise telle quelle
+    # Sinon on construit l'URI avec le chemin par défaut
+    database_url = os.environ.get("DATABASE_URL")
+    if database_url:
+        SQLALCHEMY_DATABASE_URI = database_url
+    else:
+        SQLALCHEMY_DATABASE_URI = f"sqlite:///{DEFAULT_SQLITE_PATH}"
 
     # SQLAlchemy
     SQLALCHEMY_TRACK_MODIFICATIONS = False

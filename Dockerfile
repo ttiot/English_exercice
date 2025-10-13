@@ -27,16 +27,24 @@ RUN pip install --upgrade pip \
 # Code
 COPY . .
 
+# Script d'entrée
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 # Utilisateur non-root
 RUN useradd -u 10001 -m appuser \
  && mkdir -p /data \
- && chown -R appuser:appuser /app /data
+ && chown -R appuser:appuser /app /data \
+ && chmod 755 /data
 USER appuser
 
 # Healthcheck (prévois une route /health qui renvoie 200)
 HEALTHCHECK --interval=30s --timeout=3s --retries=3 CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health').read()"
 
 EXPOSE 8000
+
+# Point d'entrée avec script de vérification des permissions
+ENTRYPOINT ["/entrypoint.sh"]
 
 # Lancement via Gunicorn (remplace 'wsgi:app' si ton module diffère)
 # Exemple : FLASK_APP==wsgi.py contenant "app"
