@@ -15,7 +15,7 @@ WORKDIR /app
 
 # Dépendances système minimales (build puis clean)
 RUN apt-get update \
- && apt-get install -y --no-install-recommends build-essential curl ca-certificates \
+ && apt-get install -y --no-install-recommends build-essential curl ca-certificates wget \
  && rm -rf /var/lib/apt/lists/*
 
 # Dépendances Python
