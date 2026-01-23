@@ -1,6 +1,9 @@
 import os
+import time
+from contextlib import contextmanager
 from datetime import datetime
 from pathlib import Path
+from typing import Iterator
 
 from flask import Flask, g
 from flask_sqlalchemy import SQLAlchemy
@@ -15,6 +18,29 @@ from .config import Config
 db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
+
+
+@contextmanager
+def _init_lock(lock_path: Path, timeout: float = 10.0) -> Iterator[None]:
+    import fcntl
+
+    fd = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o644)
+    start = time.time()
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except BlockingIOError:
+                if time.time() - start > timeout:
+                    raise TimeoutError("Timeout en attendant le verrou d'initialisation")
+                time.sleep(0.1)
+        yield
+    finally:
+        try:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+        finally:
+            os.close(fd)
 
 
 def create_app():
@@ -34,6 +60,7 @@ def create_app():
     from .models import (
         Student,
         ensure_default_categories,
+        ensure_default_prerequisites,
         ensure_admin_account,
         ensure_schema_migrations,
     )
@@ -66,20 +93,23 @@ def create_app():
             if not data_dir.exists():
                 print(f"Création du répertoire de données: {data_dir}")
                 data_dir.mkdir(parents=True, exist_ok=True)
-            
+
             # Vérifier les permissions d'écriture
             if not data_dir.is_dir() or not os.access(data_dir, os.W_OK):
                 raise PermissionError(f"Impossible d'écrire dans le répertoire: {data_dir}")
-            
+
             print(f"Répertoire de données OK: {data_dir}")
             print(f"URI de base de données: {app.config['SQLALCHEMY_DATABASE_URI']}")
-            
-            # Créer toutes les tables si elles n'existent pas
-            db.create_all()
-            ensure_schema_migrations()
-            ensure_default_categories()
-            ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
-            
+
+            lock_path = data_dir / ".init.lock"
+            with _init_lock(lock_path):
+                # Créer toutes les tables si elles n'existent pas
+                db.create_all()
+                ensure_schema_migrations()
+                ensure_default_categories()
+                ensure_default_prerequisites()
+                ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
+
         except Exception as e:
             print(f"Erreur lors de l'initialisation de la base de données: {e}")
             print(f"Répertoire de données: {app.config.get('DATA_DIR')}")

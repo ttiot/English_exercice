@@ -8,7 +8,7 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=on \
     PIP_DEFAULT_TIMEOUT=100 \
     # Gunicorn par défaut : ajuste si besoin (workers = 2*CPU+1 en général)
-    GUNICORN_CMD_ARGS="--workers=3 --threads=2 --timeout=30 --graceful-timeout=30 --bind=0.0.0.0:8000 --access-logfile=-" \
+    GUNICORN_CMD_ARGS="--workers=3 --threads=2 --timeout=30 --graceful-timeout=30 --bind=0.0.0.0:8000 --access-logfile=- --no-sendfile" \
     PORT=8000
 
 WORKDIR /app

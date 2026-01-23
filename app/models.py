@@ -1,7 +1,8 @@
 from datetime import datetime
-from typing import Optional, Sequence
+from typing import Dict, Optional, Sequence
 
 from sqlalchemy import inspect, text
+from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import db
@@ -27,6 +28,11 @@ class Student(db.Model, TimestampMixin):
     role = db.Column(db.String(20), nullable=False, default="student")
     age = db.Column(db.Integer, nullable=True)
     goals = db.Column(db.Text, nullable=True)
+    target_cefr_level = db.Column(db.String(10), nullable=True)
+    target_grade = db.Column(db.String(10), nullable=True)
+    target_trimester = db.Column(db.Integer, nullable=True)
+    interests = db.Column(db.Text, nullable=True)
+    preferred_domains = db.Column(db.String(255), nullable=True)
     avatar_filename = db.Column(db.String(255), nullable=True)
     password_hash = db.Column("pin_hash", db.String(255), nullable=False)
 
@@ -69,6 +75,7 @@ class PracticeSession(db.Model, TimestampMixin):
     total_questions = db.Column(db.Integer, nullable=False, default=0)
     correct_answers = db.Column(db.Integer, nullable=False, default=0)
     difficulty = db.Column(db.String(20), nullable=False, default="beginner")
+    duration_seconds = db.Column(db.Integer, nullable=True)
 
     exercises = db.relationship(
         "SessionExercise",
@@ -119,6 +126,12 @@ class QuestionCategory(db.Model, TimestampMixin):
     id = db.Column(db.Integer, primary_key=True)
     code = db.Column(db.String(80), nullable=False, unique=True)
     name = db.Column(db.String(120), nullable=False, unique=True)
+    domain = db.Column(db.String(50), nullable=True)
+    cecrl_level = db.Column(db.String(10), nullable=True)
+    grade_level = db.Column(db.String(10), nullable=True)
+    trimester = db.Column(db.Integer, nullable=True)
+    order_index = db.Column(db.Integer, nullable=True)
+    unlocked_by_default = db.Column(db.Boolean, default=True, nullable=False)
 
     def __repr__(self) -> str:  # pragma: no cover - repr utility
         return f"<QuestionCategory {self.code}>"
@@ -160,6 +173,46 @@ class PreparedExerciseQuestion(db.Model, TimestampMixin):
     position = db.Column(db.Integer, nullable=False, default=0)
 
 
+class SkillPrerequisite(db.Model, TimestampMixin):
+    __tablename__ = "skill_prerequisites"
+
+    id = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=False)
+    prerequisite_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=False)
+    min_mastery = db.Column(db.Float, nullable=False, default=60.0)
+
+    category = db.relationship(
+        "QuestionCategory",
+        foreign_keys=[category_id],
+        backref=db.backref("prerequisites", lazy=True),
+    )
+    prerequisite = db.relationship(
+        "QuestionCategory",
+        foreign_keys=[prerequisite_id],
+        backref=db.backref("unlocks", lazy=True),
+    )
+
+
+class StudentSkillProgress(db.Model, TimestampMixin):
+    __tablename__ = "student_skill_progress"
+    __table_args__ = (
+        db.UniqueConstraint("student_id", "category_id", name="uq_skill_progress_student_category"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=False)
+    mastery = db.Column(db.Float, nullable=False, default=0.0)
+    total_attempts = db.Column(db.Integer, nullable=False, default=0)
+    correct_attempts = db.Column(db.Integer, nullable=False, default=0)
+    correct_streak = db.Column(db.Integer, nullable=False, default=0)
+    last_accuracy = db.Column(db.Float, nullable=True)
+    last_practiced = db.Column(db.DateTime, nullable=True)
+
+    student = db.relationship("Student", backref=db.backref("skill_progress", lazy=True))
+    category = db.relationship("QuestionCategory", backref=db.backref("skill_progress", lazy=True))
+
+
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("custom", "Personnalisé"),
     ("number_word", "Nombres ➜ mots"),
@@ -180,6 +233,145 @@ DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("adjectives_opposites", "Adjectifs contraires"),
 )
 
+DEFAULT_CATEGORY_METADATA: Dict[str, Dict[str, object]] = {
+    "custom": {
+        "domain": "production",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 1,
+        "unlocked_by_default": True,
+    },
+    "number_word": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 2,
+        "unlocked_by_default": True,
+    },
+    "word_number": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 3,
+        "unlocked_by_default": True,
+    },
+    "translate_fr_en": {
+        "domain": "production",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 4,
+        "unlocked_by_default": True,
+    },
+    "translate_en_fr": {
+        "domain": "comprehension",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 5,
+        "unlocked_by_default": True,
+    },
+    "sentence_fr_en": {
+        "domain": "production",
+        "cecrl_level": "A2",
+        "grade_level": "5e",
+        "trimester": 1,
+        "order_index": 10,
+        "unlocked_by_default": False,
+    },
+    "sentence_en_fr": {
+        "domain": "comprehension",
+        "cecrl_level": "A2",
+        "grade_level": "5e",
+        "trimester": 1,
+        "order_index": 9,
+        "unlocked_by_default": False,
+    },
+    "time_reading": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 2,
+        "order_index": 6,
+        "unlocked_by_default": True,
+    },
+    "calendar_vocab": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 7,
+        "unlocked_by_default": True,
+    },
+    "family_vocab": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 8,
+        "unlocked_by_default": True,
+    },
+    "school_vocab": {
+        "domain": "vocabulary",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 2,
+        "order_index": 9,
+        "unlocked_by_default": True,
+    },
+    "daily_routine": {
+        "domain": "vocabulary",
+        "cecrl_level": "A2",
+        "grade_level": "6e",
+        "trimester": 3,
+        "order_index": 11,
+        "unlocked_by_default": False,
+    },
+    "hobbies_vocab": {
+        "domain": "vocabulary",
+        "cecrl_level": "A2",
+        "grade_level": "6e",
+        "trimester": 3,
+        "order_index": 12,
+        "unlocked_by_default": False,
+    },
+    "grammar_present_simple": {
+        "domain": "grammar",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 2,
+        "order_index": 13,
+        "unlocked_by_default": True,
+    },
+    "grammar_pronouns": {
+        "domain": "grammar",
+        "cecrl_level": "A1",
+        "grade_level": "6e",
+        "trimester": 1,
+        "order_index": 14,
+        "unlocked_by_default": True,
+    },
+    "culture_countries": {
+        "domain": "culture",
+        "cecrl_level": "A2",
+        "grade_level": "5e",
+        "trimester": 2,
+        "order_index": 15,
+        "unlocked_by_default": False,
+    },
+    "adjectives_opposites": {
+        "domain": "vocabulary",
+        "cecrl_level": "A2",
+        "grade_level": "6e",
+        "trimester": 3,
+        "order_index": 16,
+        "unlocked_by_default": False,
+    },
+}
+
 
 def ensure_default_categories() -> None:
     existing = {
@@ -190,14 +382,57 @@ def ensure_default_categories() -> None:
     for code, name in DEFAULT_CATEGORY_NAMES:
         category = existing.get(code)
         if not category:
-            db.session.add(QuestionCategory(code=code, name=name))
+            category = QuestionCategory(code=code, name=name)
+            db.session.add(category)
             created = True
         elif category.name != name:
             category.name = name
             created = True
+        metadata = DEFAULT_CATEGORY_METADATA.get(code)
+        if metadata:
+            category.domain = metadata.get("domain")
+            category.cecrl_level = metadata.get("cecrl_level")
+            category.grade_level = metadata.get("grade_level")
+            category.trimester = metadata.get("trimester")
+            category.order_index = metadata.get("order_index")
+            category.unlocked_by_default = bool(metadata.get("unlocked_by_default", True))
+            created = True
 
     if created:
         db.session.commit()
+
+
+def ensure_default_prerequisites() -> None:
+    if SkillPrerequisite.query.count() > 0:
+        return
+
+    category_lookup = {
+        category.code: category for category in QuestionCategory.query.all()
+    }
+
+    rules = [
+        ("sentence_en_fr", "translate_en_fr", 60.0),
+        ("sentence_fr_en", "translate_fr_en", 60.0),
+        ("daily_routine", "school_vocab", 55.0),
+        ("hobbies_vocab", "family_vocab", 55.0),
+        ("adjectives_opposites", "grammar_pronouns", 55.0),
+        ("culture_countries", "sentence_en_fr", 60.0),
+    ]
+
+    for category_code, prerequisite_code, min_mastery in rules:
+        category = category_lookup.get(category_code)
+        prerequisite = category_lookup.get(prerequisite_code)
+        if not category or not prerequisite:
+            continue
+        db.session.add(
+            SkillPrerequisite(
+                category_id=category.id,
+                prerequisite_id=prerequisite.id,
+                min_mastery=min_mastery,
+            )
+        )
+
+    db.session.commit()
 
 
 def ensure_schema_migrations() -> None:
@@ -246,6 +481,36 @@ def ensure_schema_migrations() -> None:
             )
             needs_commit = True
 
+        if "target_cefr_level" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN target_cefr_level VARCHAR(10)")
+            )
+            needs_commit = True
+
+        if "target_grade" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN target_grade VARCHAR(10)")
+            )
+            needs_commit = True
+
+        if "target_trimester" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN target_trimester INTEGER")
+            )
+            needs_commit = True
+
+        if "interests" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN interests TEXT")
+            )
+            needs_commit = True
+
+        if "preferred_domains" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN preferred_domains VARCHAR(255)")
+            )
+            needs_commit = True
+
     if "practice_sessions" in table_names:
         session_columns = {
             column["name"] for column in inspector.get_columns("practice_sessions")
@@ -254,6 +519,56 @@ def ensure_schema_migrations() -> None:
         if "time_limit_minutes" not in session_columns:
             db.session.execute(
                 text("ALTER TABLE practice_sessions ADD COLUMN time_limit_minutes INTEGER")
+            )
+            needs_commit = True
+
+        if "duration_seconds" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN duration_seconds INTEGER")
+            )
+            needs_commit = True
+
+    if "question_categories" in table_names:
+        category_columns = {
+            column["name"] for column in inspector.get_columns("question_categories")
+        }
+
+        if "domain" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN domain VARCHAR(50)")
+            )
+            needs_commit = True
+
+        if "cecrl_level" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN cecrl_level VARCHAR(10)")
+            )
+            needs_commit = True
+
+        if "grade_level" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN grade_level VARCHAR(10)")
+            )
+            needs_commit = True
+
+        if "trimester" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN trimester INTEGER")
+            )
+            needs_commit = True
+
+        if "order_index" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN order_index INTEGER")
+            )
+            needs_commit = True
+
+        if "unlocked_by_default" not in category_columns:
+            db.session.execute(
+                text("ALTER TABLE question_categories ADD COLUMN unlocked_by_default BOOLEAN DEFAULT 1")
+            )
+            db.session.execute(
+                text("UPDATE question_categories SET unlocked_by_default = 1 WHERE unlocked_by_default IS NULL")
             )
             needs_commit = True
 
@@ -284,8 +599,13 @@ def ensure_admin_account(default_email: str, default_password: str) -> None:
     if not default_email or not default_password:
         return
 
-    existing = Student.query.filter_by(role="admin").first()
-    if existing:
+    existing_admin = Student.query.filter_by(role="admin").first()
+    if existing_admin:
+        return
+
+    existing_email = Student.query.filter_by(email=default_email).first()
+    if existing_email:
+        # Ne pas écraser un compte existant (évite l'erreur d'unicité)
         return
 
     admin = Student(
@@ -296,7 +616,10 @@ def ensure_admin_account(default_email: str, default_password: str) -> None:
     )
     admin.set_password(default_password)
     db.session.add(admin)
-    db.session.commit()
+    try:
+        db.session.commit()
+    except IntegrityError:
+        db.session.rollback()
 
 
 __all__ = [
@@ -307,7 +630,10 @@ __all__ = [
     "PreparedExerciseSet",
     "PreparedExerciseQuestion",
     "QuestionCategory",
+    "SkillPrerequisite",
+    "StudentSkillProgress",
     "ensure_default_categories",
+    "ensure_default_prerequisites",
     "ensure_schema_migrations",
     "ensure_admin_account",
 ]

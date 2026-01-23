@@ -1,5 +1,5 @@
 from collections import defaultdict
-from datetime import datetime
+from datetime import datetime, timedelta
 from functools import wraps
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -40,7 +40,9 @@ from .exercise_factory import (
     DIFFICULTY_LABELS,
     DIFFICULTY_LEVELS,
     generate_default_exercises,
+    generate_exercises_for_categories,
     normalize_difficulty,
+    AVAILABLE_CATEGORIES,
 )
 from .models import (
     PracticeSession,
@@ -48,7 +50,9 @@ from .models import (
     PreparedExerciseSet,
     QuestionCategory,
     SessionExercise,
+    SkillPrerequisite,
     Student,
+    StudentSkillProgress,
 )
 from .validators import (
     validate_name,
@@ -64,6 +68,16 @@ bp = Blueprint("main", __name__)
 
 DIFFICULTY_DISPLAY = {**DIFFICULTY_LABELS, "prepared": "Parcours préparé"}
 DIFFICULTY_CHOICES = [(value, DIFFICULTY_LABELS[value]) for value in DIFFICULTY_LEVELS]
+CEFR_LEVELS = ["A1", "A2"]
+GRADE_LEVELS = ["6e", "5e"]
+TRIMESTER_CHOICES = [1, 2, 3]
+DOMAIN_CHOICES = [
+    ("vocabulary", "Vocabulaire"),
+    ("grammar", "Grammaire"),
+    ("comprehension", "Compréhension"),
+    ("production", "Production"),
+    ("culture", "Culture"),
+]
 
 
 def is_safe_url(target):
@@ -203,6 +217,186 @@ def _delete_avatar_file(filename: Optional[str]) -> None:
             candidate.unlink()
         except OSError:
             current_app.logger.warning("Impossible de supprimer l'ancien avatar %s", candidate)
+
+
+def _parse_domain_list(raw_values: List[str]) -> str:
+    allowed = {code for code, _ in DOMAIN_CHOICES}
+    filtered = [value for value in raw_values if value in allowed]
+    return ",".join(filtered)
+
+
+def _domain_list(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
+
+
+def _grade_rank(value: Optional[str]) -> int:
+    mapping = {"6e": 1, "5e": 2}
+    return mapping.get(value or "", 0)
+
+
+def _cefr_rank(value: Optional[str]) -> int:
+    mapping = {"A1": 1, "A2": 2}
+    return mapping.get(value or "", 0)
+
+
+def _difficulty_from_cefr(level: Optional[str]) -> str:
+    mapping = {"A1": "beginner", "A2": "intermediate"}
+    if level in mapping:
+        return mapping[level]
+    return DIFFICULTY_LEVELS[0]
+
+
+def _category_in_target(category: QuestionCategory, student: Student) -> bool:
+    if student.target_cefr_level and category.cecrl_level:
+        if _cefr_rank(category.cecrl_level) > _cefr_rank(student.target_cefr_level):
+            return False
+    if student.target_grade and category.grade_level:
+        if _grade_rank(category.grade_level) > _grade_rank(student.target_grade):
+            return False
+        if student.target_trimester and category.trimester:
+            if category.grade_level == student.target_grade and category.trimester > student.target_trimester:
+                return False
+    return True
+
+
+def _load_progress_map(student_id: int) -> Dict[int, StudentSkillProgress]:
+    entries = StudentSkillProgress.query.filter_by(student_id=student_id).all()
+    return {entry.category_id: entry for entry in entries}
+
+
+def _build_prerequisite_map() -> Dict[int, List[SkillPrerequisite]]:
+    prerequisites = SkillPrerequisite.query.all()
+    grouped: Dict[int, List[SkillPrerequisite]] = {}
+    for item in prerequisites:
+        grouped.setdefault(item.category_id, []).append(item)
+    return grouped
+
+
+def _is_category_unlocked(
+    category: QuestionCategory,
+    progress_map: Dict[int, StudentSkillProgress],
+    prereq_map: Dict[int, List[SkillPrerequisite]],
+) -> bool:
+    if category.unlocked_by_default:
+        return True
+    prerequisites = prereq_map.get(category.id, [])
+    if not prerequisites:
+        return False
+    for prereq in prerequisites:
+        progress = progress_map.get(prereq.prerequisite_id)
+        if not progress or progress.mastery < prereq.min_mastery:
+            return False
+    return True
+
+
+def _category_priority(
+    category: QuestionCategory,
+    progress: Optional[StudentSkillProgress],
+    preferred_domains: List[str],
+) -> float:
+    base = 50.0
+    if not progress or progress.total_attempts == 0:
+        base = 90.0
+    else:
+        mastery = progress.mastery or 0.0
+        base = max(10.0, 100.0 - mastery)
+        if progress.last_practiced:
+            days_since = max(0, (datetime.utcnow() - progress.last_practiced).days)
+            base += min(days_since * 4.0, 40.0)
+        if mastery < 60.0:
+            base += 15.0
+    if category.domain in preferred_domains:
+        base *= 1.2
+    return base
+
+
+def _review_interval_days(mastery: float) -> int:
+    if mastery < 50:
+        return 1
+    if mastery < 70:
+        return 3
+    if mastery < 85:
+        return 7
+    return 14
+
+
+def _recommend_difficulty(student: Student) -> str:
+    baseline = _difficulty_from_cefr(student.target_cefr_level)
+    latest_session = (
+        PracticeSession.query.filter_by(student_id=student.id)
+        .order_by(PracticeSession.started_at.desc())
+        .first()
+    )
+    if latest_session and latest_session.difficulty in DIFFICULTY_LEVELS:
+        baseline = latest_session.difficulty
+    recent_sessions = (
+        PracticeSession.query.filter_by(student_id=student.id)
+        .order_by(PracticeSession.started_at.desc())
+        .limit(5)
+        .all()
+    )
+    accuracy_samples = []
+    time_samples = []
+    for session_obj in recent_sessions:
+        if session_obj.total_questions:
+            accuracy_samples.append(session_obj.correct_answers / session_obj.total_questions)
+        if session_obj.duration_seconds and session_obj.total_questions:
+            time_samples.append(session_obj.duration_seconds / session_obj.total_questions)
+    if not accuracy_samples:
+        return baseline
+
+    avg_accuracy = sum(accuracy_samples) / len(accuracy_samples)
+    avg_time = sum(time_samples) / len(time_samples) if time_samples else None
+
+    level_index = DIFFICULTY_LEVELS.index(baseline)
+    if avg_accuracy >= 0.85 and (avg_time is None or avg_time <= 35):
+        level_index = min(level_index + 1, len(DIFFICULTY_LEVELS) - 1)
+    elif avg_accuracy <= 0.6 or (avg_time is not None and avg_time >= 60):
+        level_index = max(level_index - 1, 0)
+    return DIFFICULTY_LEVELS[level_index]
+
+
+def _update_progress_from_session(session_obj: PracticeSession) -> None:
+    now = datetime.utcnow()
+    category_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"correct": 0, "total": 0})
+    for exercise in session_obj.exercises:
+        category_stats[exercise.category]["total"] += 1
+        if exercise.is_correct:
+            category_stats[exercise.category]["correct"] += 1
+
+    categories = QuestionCategory.query.filter(QuestionCategory.code.in_(category_stats.keys())).all()
+    category_lookup = {category.code: category for category in categories}
+
+    for category_code, stats in category_stats.items():
+        category = category_lookup.get(category_code)
+        if not category:
+            continue
+        progress = StudentSkillProgress.query.filter_by(
+            student_id=session_obj.student_id,
+            category_id=category.id,
+        ).first()
+        if not progress:
+            progress = StudentSkillProgress(
+                student_id=session_obj.student_id,
+                category_id=category.id,
+            )
+            db.session.add(progress)
+        progress.total_attempts += stats["total"]
+        progress.correct_attempts += stats["correct"]
+        session_accuracy = (stats["correct"] / stats["total"]) * 100 if stats["total"] else 0.0
+        progress.last_accuracy = session_accuracy
+        progress.last_practiced = now
+        if session_accuracy >= 80:
+            progress.correct_streak += 1
+        else:
+            progress.correct_streak = 0
+        progress.mastery = (
+            (progress.correct_attempts / progress.total_attempts) * 100
+            if progress.total_attempts
+            else 0.0
+        )
 
 
 @bp.route("/")
@@ -365,61 +559,108 @@ def logout():
 @bp.route("/students/new", methods=["GET", "POST"])
 @_parent_required
 def create_student():
+    def _render_with_form_data(form_data: Dict[str, str], selected_domains: List[str]):
+        return render_template(
+            "student_form.html",
+            form_data=form_data,
+            selected_domains=selected_domains,
+            cefr_levels=CEFR_LEVELS,
+            grade_levels=GRADE_LEVELS,
+            trimester_choices=TRIMESTER_CHOICES,
+            domain_choices=DOMAIN_CHOICES,
+        )
+
     if request.method == "POST":
         first_name = sanitize_text_input(request.form.get("first_name", ""))
         last_name = sanitize_text_input(request.form.get("last_name", "")) or None
         email_raw = sanitize_text_input(request.form.get("email", "")).lower()
         age_raw = request.form.get("age", "").strip()
         goals = sanitize_text_input(request.form.get("goals", "")) or None
+        target_cefr_level = request.form.get("target_cefr_level") or None
+        target_grade = request.form.get("target_grade") or None
+        target_trimester_raw = request.form.get("target_trimester") or ""
+        interests = sanitize_text_input(request.form.get("interests", "")) or None
+        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
         password = request.form.get("password", "")
         password_confirm = request.form.get("password_confirm", "")
+        form_data = {
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "email": email_raw,
+            "age": age_raw,
+            "goals": goals or "",
+            "target_cefr_level": target_cefr_level or "",
+            "target_grade": target_grade or "",
+            "target_trimester": target_trimester_raw or "",
+            "interests": interests or "",
+        }
+        selected_domains = request.form.getlist("preferred_domains")
 
         # Validation stricte du prénom
         if not validate_name(first_name):
             flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         # Validation stricte du nom de famille
         if last_name and not validate_name(last_name):
             flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         # Validation stricte de l'email
         if not validate_email(email_raw):
             flash("L'adresse e-mail n'est pas valide.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         if Student.query.filter_by(email=email_raw).first():
             flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         # Validation stricte du mot de passe
         password_valid, password_message = validate_password(password)
         if not password_valid:
             flash(password_message, "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         if password != password_confirm:
             flash("La confirmation du mot de passe ne correspond pas.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         # Validation stricte de l'âge
         age_value = validate_age(age_raw)
         if age_raw and age_value is None:
             flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
 
         # Validation stricte des objectifs
         if goals and not validate_goals(goals):
             flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return redirect(url_for("main.create_student"))
+            return _render_with_form_data(form_data, selected_domains)
+
+        if target_cefr_level and target_cefr_level not in CEFR_LEVELS:
+            flash("Le niveau CECRL est invalide.", "danger")
+            return _render_with_form_data(form_data, selected_domains)
+
+        if target_grade and target_grade not in GRADE_LEVELS:
+            flash("Le niveau scolaire est invalide.", "danger")
+            return _render_with_form_data(form_data, selected_domains)
+
+        target_trimester = None
+        if target_trimester_raw:
+            try:
+                target_trimester = int(target_trimester_raw)
+            except ValueError:
+                flash("Le trimestre est invalide.", "danger")
+                return _render_with_form_data(form_data, selected_domains)
+            if target_trimester not in TRIMESTER_CHOICES:
+                flash("Le trimestre est invalide.", "danger")
+                return _render_with_form_data(form_data, selected_domains)
 
         avatar_file = request.files.get("avatar")
         avatar_filename: Optional[str] = None
         if avatar_file and avatar_file.filename:
             if not validate_image_file(avatar_file):
                 flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return redirect(url_for("main.create_student"))
+                return _render_with_form_data(form_data, selected_domains)
 
             sanitized = secure_filename(avatar_file.filename)
             extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
@@ -433,6 +674,11 @@ def create_student():
             email=email_raw,
             age=age_value,
             goals=goals,
+            target_cefr_level=target_cefr_level,
+            target_grade=target_grade,
+            target_trimester=target_trimester,
+            interests=interests,
+            preferred_domains=preferred_domains or None,
             avatar_filename=avatar_filename,
             role="student",
         )
@@ -443,7 +689,15 @@ def create_student():
         flash("Profil élève créé avec succès !", "success")
         return redirect(url_for("main.view_student", student_id=student.id))
 
-    return render_template("student_form.html")
+    return render_template(
+        "student_form.html",
+        form_data={},
+        selected_domains=[],
+        cefr_levels=CEFR_LEVELS,
+        grade_levels=GRADE_LEVELS,
+        trimester_choices=TRIMESTER_CHOICES,
+        domain_choices=DOMAIN_CHOICES,
+    )
 
 @bp.route("/students/<int:student_id>")
 @_login_required
@@ -463,27 +717,37 @@ def view_student(student_id: int):
         .all()
     )
 
-    category_stats: Dict[str, Dict[str, float]] = defaultdict(lambda: {"correct": 0, "total": 0})
-    for session_obj in sessions:
-        for exercise in session_obj.exercises:
-            category_stats[exercise.category]["total"] += 1
-            if exercise.is_correct:
-                category_stats[exercise.category]["correct"] += 1
+    categories = (
+        QuestionCategory.query.order_by(QuestionCategory.order_index.asc().nullslast(), QuestionCategory.name)
+        .all()
+    )
+    category_lookup = {category.code: category.name for category in categories}
+    progress_map = _load_progress_map(student.id)
 
-    category_lookup = {
-        category.code: category.name for category in QuestionCategory.query.order_by(QuestionCategory.name)
-    }
-
-    progress = [
-        {
-            "code": category,
-            "label": category_lookup.get(category, category.replace("_", " ").title()),
-            "correct": stats["correct"],
-            "total": stats["total"],
-            "rate": (stats["correct"] / stats["total"] * 100) if stats["total"] else 0,
-        }
-        for category, stats in category_stats.items()
-    ]
+    progress = []
+    for category in categories:
+        progress_entry = progress_map.get(category.id)
+        total = progress_entry.total_attempts if progress_entry else 0
+        correct = progress_entry.correct_attempts if progress_entry else 0
+        rate = progress_entry.mastery if progress_entry else 0.0
+        next_review = None
+        if progress_entry and progress_entry.last_practiced:
+            interval_days = _review_interval_days(progress_entry.mastery or 0.0)
+            next_review = progress_entry.last_practiced + timedelta(days=interval_days)
+        progress.append(
+            {
+                "code": category.code,
+                "label": category_lookup.get(category.code, category.code.replace("_", " ").title()),
+                "correct": correct,
+                "total": total,
+                "rate": rate,
+                "last_practiced": progress_entry.last_practiced if progress_entry else None,
+                "next_review": next_review,
+                "domain": category.domain,
+            }
+        )
+    if not any(item["total"] for item in progress):
+        progress = []
 
     upcoming_set = (
         PreparedExerciseSet.query.filter_by(is_used=False, student_id=student.id)
@@ -551,11 +815,16 @@ def manage_student(student_id: int):
             return redirect(url_for("main.manage_student", student_id=student.id))
 
         # Default to profile update
-        first_name = request.form.get("first_name", "").strip()
-        last_name = request.form.get("last_name", "").strip()
-        email_raw = request.form.get("email", "").strip().lower()
-        goals = request.form.get("goals", "").strip()
+        first_name = sanitize_text_input(request.form.get("first_name", ""))
+        last_name = sanitize_text_input(request.form.get("last_name", ""))
+        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
+        goals = sanitize_text_input(request.form.get("goals", ""))
         age_raw = request.form.get("age", "").strip()
+        target_cefr_level = request.form.get("target_cefr_level") or None
+        target_grade = request.form.get("target_grade") or None
+        target_trimester_raw = request.form.get("target_trimester") or ""
+        interests = sanitize_text_input(request.form.get("interests", "")) or None
+        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
         remove_avatar = request.form.get("remove_avatar") == "on"
 
         if not first_name:
@@ -576,6 +845,29 @@ def manage_student(student_id: int):
         except ValueError:
             flash("L'âge doit être un nombre.", "danger")
             return redirect(url_for("main.manage_student", student_id=student.id))
+
+        if goals and not validate_goals(goals):
+            flash("Les objectifs contiennent du contenu invalide.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        if target_cefr_level and target_cefr_level not in CEFR_LEVELS:
+            flash("Le niveau CECRL est invalide.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        if target_grade and target_grade not in GRADE_LEVELS:
+            flash("Le niveau scolaire est invalide.", "danger")
+            return redirect(url_for("main.manage_student", student_id=student.id))
+
+        target_trimester = None
+        if target_trimester_raw:
+            try:
+                target_trimester = int(target_trimester_raw)
+            except ValueError:
+                flash("Le trimestre est invalide.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
+            if target_trimester not in TRIMESTER_CHOICES:
+                flash("Le trimestre est invalide.", "danger")
+                return redirect(url_for("main.manage_student", student_id=student.id))
 
         avatar_file = request.files.get("avatar")
         new_avatar_filename: Optional[str] = None
@@ -604,6 +896,11 @@ def manage_student(student_id: int):
         student.email = email_raw
         student.goals = goals or None
         student.age = age_value
+        student.target_cefr_level = target_cefr_level
+        student.target_grade = target_grade
+        student.target_trimester = target_trimester
+        student.interests = interests
+        student.preferred_domains = preferred_domains or None
 
         db.session.commit()
         flash("Profil mis à jour.", "success")
@@ -613,6 +910,11 @@ def manage_student(student_id: int):
         "student_settings.html",
         student=student,
         parent_ok=parent_ok,
+        cefr_levels=CEFR_LEVELS,
+        grade_levels=GRADE_LEVELS,
+        trimester_choices=TRIMESTER_CHOICES,
+        domain_choices=DOMAIN_CHOICES,
+        selected_domains=_domain_list(student.preferred_domains),
     )
 
 
@@ -627,7 +929,11 @@ def start_session(student_id: int):
 
     if request.method == "POST":
         difficulty_choice = request.form.get("difficulty", DIFFICULTY_LEVELS[0])
-        difficulty_value = normalize_difficulty(difficulty_choice)
+        adaptive_difficulty = "1" in request.form.getlist("adaptive_difficulty")
+        use_skill_path = "1" in request.form.getlist("skill_path")
+        difficulty_value = (
+            _recommend_difficulty(student) if adaptive_difficulty else normalize_difficulty(difficulty_choice)
+        )
         try:
             time_limit = request.form.get("time_limit")
             time_limit_value = int(time_limit) if time_limit else None
@@ -684,7 +990,43 @@ def start_session(student_id: int):
             session_obj.total_questions = len(prepared_set.questions)
             prepared_set.mark_used()
         else:
-            exercises = generate_default_exercises(question_count, difficulty=difficulty_value)
+            if use_skill_path:
+                available_categories = QuestionCategory.query.filter(
+                    QuestionCategory.code.in_(AVAILABLE_CATEGORIES)
+                ).all()
+                progress_map = _load_progress_map(student.id)
+                prereq_map = _build_prerequisite_map()
+                preferred_domains = _domain_list(student.preferred_domains)
+
+                eligible_categories = [
+                    category for category in available_categories
+                    if _category_in_target(category, student)
+                    and _is_category_unlocked(category, progress_map, prereq_map)
+                ]
+                if not eligible_categories:
+                    eligible_categories = [
+                        category for category in available_categories
+                        if _category_in_target(category, student)
+                    ]
+                if not eligible_categories:
+                    eligible_categories = available_categories
+
+                weights = {
+                    category.code: _category_priority(
+                        category,
+                        progress_map.get(category.id),
+                        preferred_domains,
+                    )
+                    for category in eligible_categories
+                }
+                exercises = generate_exercises_for_categories(
+                    [category.code for category in eligible_categories],
+                    question_count,
+                    difficulty=difficulty_value,
+                    category_weights=weights,
+                )
+            else:
+                exercises = generate_default_exercises(question_count, difficulty=difficulty_value)
             for index, exercise in enumerate(exercises):
                 db.session.add(
                     SessionExercise(
@@ -708,6 +1050,9 @@ def start_session(student_id: int):
         difficulty_choices=DIFFICULTY_CHOICES,
         selected_difficulty=selected_difficulty,
         difficulty_labels=DIFFICULTY_DISPLAY,
+        default_adaptive=True,
+        default_skill_path=True,
+        recommended_difficulty=_recommend_difficulty(student),
     )
 
 
@@ -736,6 +1081,11 @@ def play_session(session_id: int):
                 correct_answers += 1
         session_obj.completed_at = datetime.utcnow()
         session_obj.correct_answers = correct_answers
+        if session_obj.started_at:
+            session_obj.duration_seconds = int(
+                (session_obj.completed_at - session_obj.started_at).total_seconds()
+            )
+        _update_progress_from_session(session_obj)
         db.session.commit()
 
         flash("Session terminée ! Voici ton score.", "success")

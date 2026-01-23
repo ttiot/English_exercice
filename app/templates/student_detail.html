@@ -13,6 +13,19 @@
         {% if student.goals %}
           <p><strong>Objectifs :</strong> {{ student.goals | e }}</p>
         {% endif %}
+        {% if student.target_cefr_level or student.target_grade %}
+          <p class="muted">
+            {% if student.target_cefr_level %}CECRL {{ student.target_cefr_level }}{% endif %}
+            {% if student.target_cefr_level and student.target_grade %} • {% endif %}
+            {% if student.target_grade %}Niveau {{ student.target_grade }}{% if student.target_trimester %} (T{{ student.target_trimester }}){% endif %}{% endif %}
+          </p>
+        {% endif %}
+        {% if student.preferred_domains %}
+          <p class="muted"><strong>Domaines :</strong> {{ student.preferred_domains | replace(',', ', ') }}</p>
+        {% endif %}
+        {% if student.interests %}
+          <p class="muted"><strong>Centres d'intérêt :</strong> {{ student.interests | e }}</p>
+        {% endif %}
         <div class="student-actions">
           <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
           {% if can_manage %}
@@ -52,6 +65,15 @@
           <div class="stats-card">
             <h3>{{ item.label }}</h3>
             <p>{{ item.correct }} bonnes réponses sur {{ item.total }} ({{ '%.0f'|format(item.rate) }}%)</p>
+            {% if item.domain %}
+              <p class="muted">Domaine : {{ item.domain }}</p>
+            {% endif %}
+            {% if item.last_practiced %}
+              <p class="muted">Dernière pratique : {{ item.last_practiced.strftime('%d/%m/%Y') }}</p>
+            {% endif %}
+            {% if item.next_review %}
+              <p class="muted">Prochaine révision : {{ item.next_review.strftime('%d/%m/%Y') }}</p>
+            {% endif %}
           </div>
         {% endfor %}
       </div>

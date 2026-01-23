@@ -13,6 +13,7 @@ class ExercisePrompt:
 @dataclass(frozen=True)
 class GeneratorSpec:
     difficulties: Sequence[str]
+    category: str
     builder: Callable[[str], ExercisePrompt]
 
 
@@ -432,12 +433,18 @@ def _generate_sentence_translation(difficulty: str) -> ExercisePrompt:
     if not pool:
         return ExercisePrompt("Phrase manquante", "", "sentence_en_fr")
     english, french = random.choice(pool)
-    if random.choice([True, False]):
-        return ExercisePrompt(
-            prompt=f"Traduis en français : '{english}'.",
-            answer=french,
-            category="sentence_en_fr",
-        )
+    return ExercisePrompt(
+        prompt=f"Traduis en français : '{english}'.",
+        answer=french,
+        category="sentence_en_fr",
+    )
+
+
+def _generate_sentence_fr_en(difficulty: str) -> ExercisePrompt:
+    pool = _pooled_list(SENTENCE_BANK, difficulty)
+    if not pool:
+        return ExercisePrompt("Phrase manquante", "", "sentence_fr_en")
+    english, french = random.choice(pool)
     return ExercisePrompt(
         prompt=f"Traduis en anglais : '{french}'.",
         answer=english,
@@ -574,22 +581,25 @@ def _generate_adjective_opposite(difficulty: str) -> ExercisePrompt:
 
 
 GENERATOR_REGISTRY: List[GeneratorSpec] = [
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_number_word_exercise),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_word_number_exercise),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_translation_fr_en),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_translation_en_fr),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_sentence_translation),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_time_reading_exercise),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_calendar_vocabulary),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_family_vocabulary),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_school_vocabulary),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_daily_routine),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_hobbies_vocabulary),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_present_simple),
-    GeneratorSpec(("beginner", "intermediate", "advanced"), _generate_pronoun_exercise),
-    GeneratorSpec(("intermediate", "advanced"), _generate_culture_item),
-    GeneratorSpec(("intermediate", "advanced"), _generate_adjective_opposite),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "number_word", _generate_number_word_exercise),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "word_number", _generate_word_number_exercise),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "translate_fr_en", _generate_translation_fr_en),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "translate_en_fr", _generate_translation_en_fr),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "sentence_en_fr", _generate_sentence_translation),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "sentence_fr_en", _generate_sentence_fr_en),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "time_reading", _generate_time_reading_exercise),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "calendar_vocab", _generate_calendar_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "family_vocab", _generate_family_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "school_vocab", _generate_school_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "daily_routine", _generate_daily_routine),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "hobbies_vocab", _generate_hobbies_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "grammar_present_simple", _generate_present_simple),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "grammar_pronouns", _generate_pronoun_exercise),
+    GeneratorSpec(("intermediate", "advanced"), "culture_countries", _generate_culture_item),
+    GeneratorSpec(("intermediate", "advanced"), "adjectives_opposites", _generate_adjective_opposite),
 ]
+
+AVAILABLE_CATEGORIES: Tuple[str, ...] = tuple(sorted({spec.category for spec in GENERATOR_REGISTRY}))
 
 
 def generate_default_exercises(quantity: int = 20, difficulty: str = "beginner") -> List[ExercisePrompt]:
@@ -613,5 +623,57 @@ def generate_default_exercises(quantity: int = 20, difficulty: str = "beginner")
         exercises.append(prompt)
         seen_signatures.add(signature)
         attempts = 0
+
+    return exercises
+
+
+def generate_exercises_for_categories(
+    categories: Sequence[str],
+    quantity: int,
+    difficulty: str = "beginner",
+    category_weights: Optional[Dict[str, float]] = None,
+) -> List[ExercisePrompt]:
+    normalized = normalize_difficulty(difficulty)
+    exercises: List[ExercisePrompt] = []
+
+    available_specs = [
+        spec for spec in GENERATOR_REGISTRY
+        if spec.category in categories and normalized in spec.difficulties
+    ]
+    if not available_specs:
+        available_specs = [spec for spec in GENERATOR_REGISTRY if spec.category in categories]
+    if not available_specs:
+        return generate_default_exercises(quantity, difficulty=normalized)
+
+    specs_by_category: Dict[str, List[GeneratorSpec]] = {}
+    for spec in available_specs:
+        specs_by_category.setdefault(spec.category, []).append(spec)
+
+    weighted_categories = list(specs_by_category.keys())
+    weights = []
+    for category in weighted_categories:
+        weight = 1.0
+        if category_weights:
+            weight = max(0.1, float(category_weights.get(category, 1.0)))
+        weights.append(weight)
+
+    seen_signatures = set()
+    attempts = 0
+    max_attempts = max(10, quantity * 12)
+
+    while len(exercises) < quantity and attempts < max_attempts:
+        selected_category = random.choices(weighted_categories, weights=weights, k=1)[0]
+        spec = random.choice(specs_by_category[selected_category])
+        prompt = spec.builder(normalized)
+        signature = (prompt.category, prompt.prompt.strip().lower())
+        if signature in seen_signatures:
+            attempts += 1
+            continue
+        exercises.append(prompt)
+        seen_signatures.add(signature)
+        attempts = 0
+
+    if len(exercises) < quantity:
+        exercises.extend(generate_default_exercises(quantity - len(exercises), difficulty=normalized))
 
     return exercises
