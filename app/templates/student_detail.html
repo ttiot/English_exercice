@@ -28,10 +28,20 @@
         {% endif %}
         <div class="student-actions">
           <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">Démarrer une session</a>
+          <a class="btn btn-secondary" href="{{ url_for('main.start_session', student_id=student.id, mode='challenge_10') }}">Défi 10 min</a>
+          <a class="btn btn-secondary" href="{{ url_for('main.start_session', student_id=student.id, mode='control') }}">Mode contrôle</a>
           {% if can_manage %}
             <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">Gérer le profil</a>
           {% endif %}
         </div>
+        {% if parent_ok %}
+          <p class="muted">
+            Bilan trimestriel :
+            <a href="{{ url_for('main.export_quarter_report', student_id=student.id, format='csv') }}">CSV</a>
+            •
+            <a href="{{ url_for('main.export_quarter_report', student_id=student.id, format='pdf') }}">PDF</a>
+          </p>
+        {% endif %}
       </div>
     </div>
   </div>
@@ -58,6 +68,53 @@
   {% endif %}
 
   <div class="card">
+    <h3>Objectifs hebdo</h3>
+    {% if weekly_goal %}
+      <p>
+        Cible : {{ weekly_goal.target_sessions }} sessions • {{ weekly_goal.target_minutes }} min •
+        {{ weekly_goal.target_accuracy }}% • {{ weekly_goal.target_challenges }} défis
+      </p>
+    {% else %}
+      <p class="muted">Aucun objectif défini pour cette semaine.</p>
+    {% endif %}
+    <p>
+      Progression : {{ weekly_progress.sessions }} sessions • {{ weekly_progress.minutes }} min •
+      {{ weekly_progress.accuracy }}% • {{ weekly_progress.challenges }} défis
+    </p>
+  </div>
+
+  <div class="card">
+    <h3>Badges & compétences</h3>
+    {% if badge_status %}
+      <div class="grid">
+        {% for item in badge_status %}
+          <div class="stats-card">
+            <span class="badge {% if item.earned %}badge-unlocked{% else %}badge-locked{% endif %}">
+              {{ item.badge.name }}
+            </span>
+            <p class="muted">{{ item.badge.description }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Les badges seront débloqués après les premières sessions.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Planification des révisions</h3>
+    {% if review_plans %}
+      <ul>
+        {% for plan in review_plans %}
+          <li>{{ plan.due_date.strftime('%d/%m/%Y') }} • {{ plan.category.name }}</li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Pas de révisions planifiées pour le moment.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
     <h3>Progression par compétence</h3>
     {% if progress %}
       <div class="grid">
@@ -81,6 +138,32 @@
       <p>Pas encore de progression enregistrée. Lance la première session !</p>
     {% endif %}
   </div>
+
+  {% if parent_ok %}
+    <div class="card">
+      <h3>Analyse détaillée</h3>
+      {% if theme_summary %}
+        <p><strong>Évolution par thème</strong></p>
+        <ul>
+          {% for item in theme_summary %}
+            <li>{{ item.domain }} : {{ item.rate }}% ({{ item.correct }}/{{ item.total }})</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Pas encore de données par thème.</p>
+      {% endif %}
+      {% if recurring_errors %}
+        <p><strong>Erreurs récurrentes</strong></p>
+        <ul>
+          {% for error in recurring_errors %}
+            <li>{{ error.prompt }} ({{ error.count }}x)</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Aucune erreur récurrente.</p>
+      {% endif %}
+    </div>
+  {% endif %}
 
   <div class="card">
     <h3>Sessions passées</h3>

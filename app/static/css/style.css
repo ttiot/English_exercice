@@ -144,6 +144,12 @@ form select {
   color: var(--muted);
 }
 
+.instructions {
+  font-weight: 600;
+  color: var(--primary-dark);
+  margin: 0.5rem 0 1rem;
+}
+
 .alert {
   border-radius: 12px;
   padding: 1rem 1.25rem;
@@ -253,6 +259,11 @@ footer {
 
 .muted {
   color: var(--muted);
+}
+
+.card ul {
+  padding-left: 1.25rem;
+  margin: 0.5rem 0 0;
 }
 
 .student-grid {

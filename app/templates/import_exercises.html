@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+{% block title %}Importer des listes{% endblock %}
+{% block content %}
+  <div class="card">
+    <div class="card-header-actions">
+      <div>
+        <h2>Importer des listes (CSV/Anki)</h2>
+        <p class="muted">Ajoutez rapidement une série de questions depuis un fichier.</p>
+      </div>
+      <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Retour</a>
+    </div>
+    <form method="post" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <label for="title">Nom de la série</label>
+      <input id="title" name="title" placeholder="Ex. Révisions du trimestre" />
+
+      <label for="student_id">Attribuer à</label>
+      <select id="student_id" name="student_id">
+        <option value="all">Tous les élèves</option>
+        {% for student in students %}
+          <option value="{{ student.id }}">{{ student.full_name() }}</option>
+        {% endfor %}
+      </select>
+
+      <label for="format">Format</label>
+      <select id="format" name="format">
+        <option value="csv">CSV</option>
+        <option value="anki">Anki (tab/point-virgule)</option>
+      </select>
+
+      <label for="delimiter">Délimiteur CSV</label>
+      <input id="delimiter" name="delimiter" placeholder="," />
+
+      <label for="instructions_fr">Consigne générale (FR)</label>
+      <textarea id="instructions_fr" name="instructions_fr" rows="2" placeholder="Ex. Réponds en anglais et relis tes réponses."></textarea>
+      <label for="instructions_en">General instruction (EN)</label>
+      <textarea id="instructions_en" name="instructions_en" rows="2" placeholder="Ex. Answer in English and double-check spelling."></textarea>
+
+      <label for="file">Fichier à importer</label>
+      <input id="file" name="file" type="file" accept=".csv,.txt" required />
+
+      <button class="btn btn-primary" type="submit">Importer</button>
+    </form>
+  </div>
+{% endblock %}

@@ -4,9 +4,14 @@
   <div class="card">
     <h2>Session d'entraînement pour {{ student.full_name() }}</h2>
     <p class="muted">
+      Mode :
+      <strong>{{ session_type_labels.get(session_obj.session_type, session_obj.session_type|title) }}</strong>
+    </p>
+    <p class="muted">
       Niveau :
       <strong>{{ difficulty_labels.get(session_obj.difficulty or 'beginner', (session_obj.difficulty or 'beginner')|replace('_', ' ')|title) }}</strong>
     </p>
+    <p class="instructions">{{ instructions }}</p>
     {% if time_limit %}
       {% set minutes = time_limit // 60 %}
       {% set seconds = time_limit % 60 %}

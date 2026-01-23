@@ -8,6 +8,14 @@
       ({{ '%.0f'|format(session_obj.completion_rate()) }}%)
     </p>
     <p>
+      Mode :
+      <strong>{{ session_type_labels.get(session_obj.session_type, session_obj.session_type|title) }}</strong>
+    </p>
+    {% if session_obj.session_type == 'control' and session_obj.total_questions %}
+      {% set grade = (session_obj.correct_answers / session_obj.total_questions * 20) %}
+      <p>Note simulée : <strong>{{ '%.1f'|format(grade) }}/20</strong></p>
+    {% endif %}
+    <p>
       Niveau :
       <strong>
         {{ difficulty_labels.get(session_obj.difficulty or 'beginner', (session_obj.difficulty or 'beginner')|replace('_', ' ')|title) }}

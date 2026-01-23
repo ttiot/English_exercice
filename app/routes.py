@@ -1,10 +1,15 @@
 from collections import defaultdict
-from datetime import datetime, timedelta
+import calendar
+from datetime import date, datetime, timedelta
 from functools import wraps
+from io import StringIO
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from uuid import uuid4
 from urllib.parse import urlparse, urljoin
+
+import csv
+import re
 
 from flask import (
     Blueprint,
@@ -45,14 +50,19 @@ from .exercise_factory import (
     AVAILABLE_CATEGORIES,
 )
 from .models import (
+    Badge,
     PracticeSession,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
+    ExerciseItem,
     QuestionCategory,
+    ReviewPlan,
     SessionExercise,
     SkillPrerequisite,
     Student,
+    StudentBadge,
     StudentSkillProgress,
+    WeeklyGoal,
 )
 from .validators import (
     validate_name,
@@ -78,6 +88,12 @@ DOMAIN_CHOICES = [
     ("production", "Production"),
     ("culture", "Culture"),
 ]
+SESSION_TYPE_LABELS = {
+    "practice": "Entraînement",
+    "challenge": "Défi",
+    "control": "Contrôle",
+    "prepared": "Parcours préparé",
+}
 
 
 def is_safe_url(target):
@@ -322,6 +338,322 @@ def _review_interval_days(mastery: float) -> int:
     return 14
 
 
+def _week_start(value: date) -> date:
+    return value - timedelta(days=value.weekday())
+
+
+def _current_week_range() -> Tuple[date, date]:
+    start = _week_start(date.today())
+    end = start + timedelta(days=6)
+    return start, end
+
+
+def _get_weekly_goal(student_id: int, week_start: date) -> Optional[WeeklyGoal]:
+    return WeeklyGoal.query.filter_by(student_id=student_id, week_start=week_start).first()
+
+
+def _compute_weekly_progress(student: Student, week_start: date) -> Dict[str, float]:
+    week_end = week_start + timedelta(days=6)
+    sessions = (
+        PracticeSession.query.filter(
+            PracticeSession.student_id == student.id,
+            PracticeSession.started_at >= datetime.combine(week_start, datetime.min.time()),
+            PracticeSession.started_at <= datetime.combine(week_end, datetime.max.time()),
+        )
+        .all()
+    )
+    total_questions = sum(session.total_questions or 0 for session in sessions)
+    total_correct = sum(session.correct_answers or 0 for session in sessions)
+    total_seconds = sum(session.duration_seconds or 0 for session in sessions)
+    challenge_count = sum(1 for session in sessions if session.session_type == "challenge")
+    average_score = (total_correct / total_questions * 100) if total_questions else 0.0
+    return {
+        "sessions": len(sessions),
+        "minutes": round(total_seconds / 60, 1) if total_seconds else 0.0,
+        "accuracy": round(average_score, 1) if average_score else 0.0,
+        "challenges": challenge_count,
+    }
+
+
+def _select_instruction_language(student: Student) -> str:
+    if student.target_cefr_level and student.target_cefr_level.upper() == "A2":
+        return "en"
+    return "fr"
+
+
+def _award_badges(student_id: int) -> None:
+    progress_entries = StudentSkillProgress.query.filter_by(student_id=student_id).all()
+    progress_map = {entry.category_id: entry for entry in progress_entries}
+    badges = Badge.query.all()
+    earned = {item.badge_id for item in StudentBadge.query.filter_by(student_id=student_id).all()}
+    changed = False
+    for badge in badges:
+        if badge.id in earned:
+            continue
+        if badge.category_id is None:
+            continue
+        progress = progress_map.get(badge.category_id)
+        if not progress:
+            continue
+        if progress.mastery >= badge.min_mastery and progress.correct_streak >= badge.min_streak:
+            db.session.add(StudentBadge(student_id=student_id, badge_id=badge.id))
+            changed = True
+    if changed:
+        db.session.flush()
+
+
+def _update_review_plan(session_obj: PracticeSession) -> None:
+    today = date.today()
+    categories = {exercise.category for exercise in session_obj.exercises}
+    category_lookup = {
+        category.code: category for category in QuestionCategory.query.filter(
+            QuestionCategory.code.in_(categories)
+        ).all()
+    }
+
+    for category_code, category in category_lookup.items():
+        ReviewPlan.query.filter(
+            ReviewPlan.student_id == session_obj.student_id,
+            ReviewPlan.category_id == category.id,
+            ReviewPlan.due_date <= today,
+            ReviewPlan.completed.is_(False),
+        ).update({"completed": True})
+
+        progress = StudentSkillProgress.query.filter_by(
+            student_id=session_obj.student_id,
+            category_id=category.id,
+        ).first()
+        mastery = progress.mastery if progress else 0.0
+        interval = _review_interval_days(mastery)
+        for multiplier in (1, 2, 4):
+            due_date = today + timedelta(days=interval * multiplier)
+            existing = ReviewPlan.query.filter_by(
+                student_id=session_obj.student_id,
+                category_id=category.id,
+                due_date=due_date,
+            ).first()
+            if not existing:
+                db.session.add(
+                    ReviewPlan(
+                        student_id=session_obj.student_id,
+                        category_id=category.id,
+                        due_date=due_date,
+                    )
+                )
+
+    db.session.flush()
+
+
+def _normalize_answer(value: str, loose: bool = False) -> str:
+    normalized = value.strip().lower()
+    normalized = normalized.replace("’", "'").replace("‘", "'").replace("`", "'")
+    normalized = " ".join(normalized.split())
+    if not loose:
+        return normalized
+    import unicodedata
+
+    normalized = unicodedata.normalize("NFKD", normalized)
+    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
+    return normalized
+
+
+def _prompt_has_blank(prompt: str) -> bool:
+    if not prompt:
+        return False
+    return bool(re.search(r"_{3,}|\\.{3,}|…", prompt))
+
+
+def _is_answer_correct(exercise: SessionExercise) -> bool:
+    base_answer = exercise.correct_answer or ""
+    user_answer = exercise.student_answer or ""
+    strict_expected = _normalize_answer(base_answer, loose=False)
+    strict_actual = _normalize_answer(user_answer, loose=False)
+
+    if strict_expected == strict_actual:
+        return True
+
+    translation_categories = {
+        "translate_en_fr",
+        "translate_fr_en",
+        "sentence_en_fr",
+        "sentence_fr_en",
+    }
+    if exercise.category in translation_categories:
+        loose_expected = _normalize_answer(base_answer, loose=True)
+        loose_actual = _normalize_answer(user_answer, loose=True)
+        return loose_expected == loose_actual
+
+    if _prompt_has_blank(exercise.prompt):
+        pattern = rf"\b{re.escape(strict_expected)}\b"
+        if re.search(pattern, strict_actual):
+            return True
+    return False
+
+
+def _quarter_range(year: int, quarter: int) -> Tuple[date, date]:
+    quarter = max(1, min(4, quarter))
+    start_month = (quarter - 1) * 3 + 1
+    end_month = start_month + 2
+    start = date(year, start_month, 1)
+    last_day = calendar.monthrange(year, end_month)[1]
+    end = date(year, end_month, last_day)
+    return start, end
+
+
+def _pdf_escape(value: str) -> str:
+    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
+
+
+def _build_simple_pdf(lines: List[str]) -> bytes:
+    content_lines = ["BT", "/F1 12 Tf", "50 780 Td"]
+    for line in lines:
+        safe = _pdf_escape(line)
+        content_lines.append(f"({safe}) Tj")
+        content_lines.append("0 -16 Td")
+    content_lines.append("ET")
+    content = "\n".join(content_lines)
+
+    objects = []
+    objects.append("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj")
+    objects.append("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj")
+    objects.append(
+        "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
+        "/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >> endobj"
+    )
+    objects.append(f"4 0 obj << /Length {len(content.encode('utf-8'))} >> stream\n{content}\nendstream endobj")
+    objects.append("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj")
+
+    xref_positions = []
+    output = ["%PDF-1.4"]
+    offset = len(output[0]) + 1
+    for obj in objects:
+        xref_positions.append(offset)
+        output.append(obj)
+        offset += len(obj.encode("utf-8")) + 1
+
+    xref_start = offset
+    xref = ["xref", f"0 {len(objects) + 1}", "0000000000 65535 f "]
+    for pos in xref_positions:
+        xref.append(f"{pos:010} 00000 n ")
+    output.extend(xref)
+    output.append(
+        "trailer << /Size {size} /Root 1 0 R >>".format(size=len(objects) + 1)
+    )
+    output.append(f"startxref\n{xref_start}\n%%EOF")
+    return "\n".join(output).encode("utf-8")
+
+
+def _student_theme_summary(student_id: int) -> List[Dict[str, object]]:
+    exercises = (
+        SessionExercise.query.join(PracticeSession)
+        .filter(PracticeSession.student_id == student_id)
+        .all()
+    )
+    category_lookup = {
+        category.code: category for category in QuestionCategory.query.all()
+    }
+    domain_labels = {code: label for code, label in DOMAIN_CHOICES}
+    stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"total": 0, "correct": 0})
+    for exercise in exercises:
+        category = category_lookup.get(exercise.category)
+        domain = category.domain if category and category.domain else "autre"
+        stats[domain]["total"] += 1
+        if exercise.is_correct:
+            stats[domain]["correct"] += 1
+    summary = []
+    for domain, values in stats.items():
+        total = values["total"]
+        correct = values["correct"]
+        rate = (correct / total * 100) if total else 0
+        summary.append(
+            {
+                "domain": domain_labels.get(domain, domain),
+                "total": total,
+                "correct": correct,
+                "rate": round(rate, 1) if rate else 0,
+            }
+        )
+    return sorted(summary, key=lambda item: item["domain"])
+
+
+def _student_recurring_errors(student_id: int, limit: int = 5) -> List[Dict[str, object]]:
+    exercises = (
+        SessionExercise.query.join(PracticeSession)
+        .filter(PracticeSession.student_id == student_id, SessionExercise.is_correct.is_(False))
+        .all()
+    )
+    counts: Dict[str, Dict[str, object]] = {}
+    for exercise in exercises:
+        key = f"{exercise.category}:{exercise.prompt}"
+        entry = counts.setdefault(
+            key, {"prompt": exercise.prompt, "category": exercise.category, "count": 0}
+        )
+        entry["count"] += 1
+    sorted_errors = sorted(counts.values(), key=lambda item: item["count"], reverse=True)
+    return sorted_errors[:limit]
+
+
+def _parse_import_rows(
+    file_content: str, import_format: str, delimiter: str
+) -> List[Dict[str, str]]:
+    rows: List[Dict[str, str]] = []
+    if import_format == "anki":
+        for raw_line in file_content.splitlines():
+            line = raw_line.strip()
+            if not line:
+                continue
+            if "\t" in line:
+                parts = [part.strip() for part in line.split("\t", 2)]
+            elif ";" in line:
+                parts = [part.strip() for part in line.split(";", 2)]
+            else:
+                parts = [part.strip() for part in line.split(",", 2)]
+            if len(parts) < 2:
+                continue
+            rows.append({"prompt": parts[0], "answer": parts[1], "category": "custom"})
+        return rows
+
+    safe_delimiter = (delimiter or ",")[0]
+    csv_reader = csv.reader(StringIO(file_content), delimiter=safe_delimiter)
+    headers: List[str] = []
+    for index, row in enumerate(csv_reader):
+        if not row:
+            continue
+        if index == 0 and any(cell.lower() in {"prompt", "question", "answer", "reponse"} for cell in row):
+            headers = [cell.strip().lower() for cell in row]
+            continue
+        if headers:
+            row_map = {headers[i]: row[i].strip() if i < len(row) else "" for i in range(len(headers))}
+            prompt = row_map.get("prompt") or row_map.get("question") or ""
+            answer = row_map.get("answer") or row_map.get("reponse") or ""
+            category = row_map.get("category") or row_map.get("categorie") or "custom"
+        else:
+            prompt = row[0].strip() if len(row) > 0 else ""
+            answer = row[1].strip() if len(row) > 1 else ""
+            category = row[2].strip() if len(row) > 2 else "custom"
+        if prompt and answer:
+            rows.append({"prompt": prompt, "answer": answer, "category": category or "custom"})
+    return rows
+
+
+def _filter_categories(
+    domain: str, cefr: str, grade: str, trimester: str
+) -> List[QuestionCategory]:
+    query = QuestionCategory.query
+    if domain:
+        query = query.filter_by(domain=domain)
+    if cefr:
+        query = query.filter_by(cecrl_level=cefr)
+    if grade:
+        query = query.filter_by(grade_level=grade)
+    if trimester:
+        try:
+            query = query.filter_by(trimester=int(trimester))
+        except ValueError:
+            pass
+    return query.order_by(QuestionCategory.order_index, QuestionCategory.name).all()
+
+
 def _recommend_difficulty(student: Student) -> str:
     baseline = _difficulty_from_cefr(student.target_cefr_level)
     latest_session = (
@@ -383,6 +715,12 @@ def _update_progress_from_session(session_obj: PracticeSession) -> None:
                 category_id=category.id,
             )
             db.session.add(progress)
+        if progress.total_attempts is None:
+            progress.total_attempts = 0
+        if progress.correct_attempts is None:
+            progress.correct_attempts = 0
+        if progress.correct_streak is None:
+            progress.correct_streak = 0
         progress.total_attempts += stats["total"]
         progress.correct_attempts += stats["correct"]
         session_accuracy = (stats["correct"] / stats["total"]) * 100 if stats["total"] else 0.0
@@ -761,6 +1099,33 @@ def view_student(student_id: int):
             .first()
         )
 
+    week_start = _current_week_range()[0]
+    weekly_goal = _get_weekly_goal(student.id, week_start)
+    weekly_progress = _compute_weekly_progress(student, week_start)
+    review_plans = (
+        ReviewPlan.query.filter(
+            ReviewPlan.student_id == student.id,
+            ReviewPlan.completed.is_(False),
+            ReviewPlan.due_date >= date.today(),
+        )
+        .order_by(ReviewPlan.due_date.asc())
+        .limit(8)
+        .all()
+    )
+    badges = Badge.query.order_by(Badge.name).all()
+    earned_badge_ids = {
+        item.badge_id for item in StudentBadge.query.filter_by(student_id=student.id).all()
+    }
+    badge_status = [
+        {
+            "badge": badge,
+            "earned": badge.id in earned_badge_ids,
+        }
+        for badge in badges
+    ]
+    theme_summary = _student_theme_summary(student.id) if parent_ok else []
+    recurring_errors = _student_recurring_errors(student.id) if parent_ok else []
+
     return render_template(
         "student_detail.html",
         student=student,
@@ -771,6 +1136,13 @@ def view_student(student_id: int):
         can_manage=parent_ok or student_ok,
         parent_ok=parent_ok,
         difficulty_labels=DIFFICULTY_DISPLAY,
+        weekly_goal=weekly_goal,
+        weekly_progress=weekly_progress,
+        week_start=week_start,
+        review_plans=review_plans,
+        badge_status=badge_status,
+        theme_summary=theme_summary,
+        recurring_errors=recurring_errors,
     )
 
 
@@ -928,6 +1300,7 @@ def start_session(student_id: int):
         return redirect(url_for("main.view_student", student_id=student.id))
 
     if request.method == "POST":
+        session_mode = request.form.get("session_mode", "practice")
         difficulty_choice = request.form.get("difficulty", DIFFICULTY_LEVELS[0])
         adaptive_difficulty = "1" in request.form.getlist("adaptive_difficulty")
         use_skill_path = "1" in request.form.getlist("skill_path")
@@ -947,12 +1320,25 @@ def start_session(student_id: int):
         except ValueError:
             question_count = 20
 
+        session_type = "practice"
+        if session_mode == "challenge_10":
+            session_type = "challenge"
+            time_limit_value = 10
+        elif session_mode == "challenge_15":
+            session_type = "challenge"
+            time_limit_value = 15
+        elif session_mode == "control":
+            session_type = "control"
+            if not time_limit_value:
+                time_limit_value = 20
+
         session_obj = PracticeSession(
             student_id=student.id,
             time_limit_minutes=time_limit_value,
             time_limit_seconds=(time_limit_value * 60) if time_limit_value else None,
             total_questions=question_count,
             difficulty=difficulty_value,
+            session_type=session_type,
         )
         db.session.add(session_obj)
         db.session.flush()
@@ -976,6 +1362,9 @@ def start_session(student_id: int):
                 session_obj.time_limit_seconds = prepared_set.time_limit_seconds
                 session_obj.time_limit_minutes = prepared_set.time_limit_seconds // 60
             session_obj.difficulty = "prepared"
+            session_obj.session_type = "prepared"
+            session_obj.instructions_fr = prepared_set.instructions_fr
+            session_obj.instructions_en = prepared_set.instructions_en
 
             for index, question in enumerate(prepared_set.questions):
                 db.session.add(
@@ -1044,6 +1433,7 @@ def start_session(student_id: int):
         return redirect(url_for("main.play_session", session_id=session_obj.id))
 
     selected_difficulty = normalize_difficulty(request.args.get("difficulty"))
+    default_mode = request.args.get("mode", "practice")
     return render_template(
         "session_form.html",
         student=student,
@@ -1053,6 +1443,8 @@ def start_session(student_id: int):
         default_adaptive=True,
         default_skill_path=True,
         recommended_difficulty=_recommend_difficulty(student),
+        session_type_labels=SESSION_TYPE_LABELS,
+        default_mode=default_mode,
     )
 
 
@@ -1076,7 +1468,7 @@ def play_session(session_id: int):
             answer_key = f"answer_{exercise.id}"
             user_answer = request.form.get(answer_key, "").strip()
             exercise.student_answer = user_answer
-            exercise.is_correct = user_answer.lower() == exercise.correct_answer.lower()
+            exercise.is_correct = _is_answer_correct(exercise)
             if exercise.is_correct:
                 correct_answers += 1
         session_obj.completed_at = datetime.utcnow()
@@ -1086,6 +1478,8 @@ def play_session(session_id: int):
                 (session_obj.completed_at - session_obj.started_at).total_seconds()
             )
         _update_progress_from_session(session_obj)
+        _award_badges(session_obj.student_id)
+        _update_review_plan(session_obj)
         db.session.commit()
 
         flash("Session terminée ! Voici ton score.", "success")
@@ -1094,12 +1488,22 @@ def play_session(session_id: int):
     time_limit = session_obj.time_limit_seconds
     if not time_limit and session_obj.time_limit_minutes:
         time_limit = session_obj.time_limit_minutes * 60
+    instruction_language = _select_instruction_language(student)
+    instructions = session_obj.instructions_en if instruction_language == "en" else session_obj.instructions_fr
+    if not instructions:
+        instructions = (
+            "Réponds aux questions sans aide et soigne l'orthographe."
+            if instruction_language == "fr"
+            else "Answer each question without help and check your spelling."
+        )
     return render_template(
         "session_play.html",
         session_obj=session_obj,
         student=student,
         time_limit=time_limit,
         difficulty_labels=DIFFICULTY_DISPLAY,
+        instructions=instructions,
+        session_type_labels=SESSION_TYPE_LABELS,
     )
 
 
@@ -1124,6 +1528,7 @@ def session_summary(session_id: int):
         session_obj=session_obj,
         category_lookup=category_lookup,
         difficulty_labels=DIFFICULTY_DISPLAY,
+        session_type_labels=SESSION_TYPE_LABELS,
     )
 
 
@@ -1140,17 +1545,32 @@ def parent_dashboard():
     categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
 
     stats = []
+    week_start, week_end = _current_week_range()
     for student in students:
         sessions = PracticeSession.query.filter_by(student_id=student.id).all()
         total_sessions = len(sessions)
         total_questions = sum(session.total_questions or 0 for session in sessions)
         total_correct = sum(session.correct_answers or 0 for session in sessions)
         average_score = (total_correct / total_questions * 100) if total_questions else 0
+        total_seconds = sum(session.duration_seconds or 0 for session in sessions)
+        weekly_goal = _get_weekly_goal(student.id, week_start)
+        weekly_progress = _compute_weekly_progress(student, week_start)
+        theme_summary = _student_theme_summary(student.id)
+        recurring_errors = _student_recurring_errors(student.id)
+        earned_badges = StudentBadge.query.filter_by(student_id=student.id).count()
         stats.append(
             {
                 "student": student,
                 "total_sessions": total_sessions,
                 "average_score": round(average_score, 1) if average_score else 0,
+                "total_minutes": round(total_seconds / 60, 1) if total_seconds else 0.0,
+                "weekly_goal": weekly_goal,
+                "weekly_progress": weekly_progress,
+                "week_start": week_start,
+                "week_end": week_end,
+                "theme_summary": theme_summary,
+                "recurring_errors": recurring_errors,
+                "earned_badges": earned_badges,
             }
         )
 
@@ -1165,6 +1585,168 @@ def parent_dashboard():
         students=students,
         categories=categories,
         all_users=all_users,
+        week_start=week_start,
+        week_end=week_end,
+    )
+
+
+@bp.route("/parents/students/<int:student_id>/weekly-goal", methods=["POST"])
+@_parent_required
+def update_weekly_goal(student_id: int):
+    student = _get_student_or_404(student_id)
+    week_start = _current_week_range()[0]
+
+    try:
+        target_sessions = int(request.form.get("target_sessions", 3))
+        target_minutes = int(request.form.get("target_minutes", 45))
+        target_accuracy = float(request.form.get("target_accuracy", 70))
+        target_challenges = int(request.form.get("target_challenges", 1))
+    except ValueError:
+        flash("Les objectifs doivent être des nombres valides.", "danger")
+        return redirect(url_for("main.parent_dashboard"))
+
+    goal = _get_weekly_goal(student.id, week_start)
+    if not goal:
+        goal = WeeklyGoal(student_id=student.id, week_start=week_start)
+        db.session.add(goal)
+
+    goal.target_sessions = max(1, target_sessions)
+    goal.target_minutes = max(5, target_minutes)
+    goal.target_accuracy = max(0.0, min(100.0, target_accuracy))
+    goal.target_challenges = max(0, target_challenges)
+    db.session.commit()
+
+    flash("Objectifs hebdomadaires mis à jour.", "success")
+    return redirect(url_for("main.parent_dashboard"))
+
+
+@bp.route("/parents/students/<int:student_id>/report")
+@_parent_required
+def export_quarter_report(student_id: int):
+    student = _get_student_or_404(student_id)
+    today = date.today()
+    quarter = request.args.get("quarter")
+    year = request.args.get("year")
+    try:
+        quarter_value = int(quarter) if quarter else ((today.month - 1) // 3 + 1)
+        year_value = int(year) if year else today.year
+    except ValueError:
+        quarter_value = (today.month - 1) // 3 + 1
+        year_value = today.year
+
+    start_date, end_date = _quarter_range(year_value, quarter_value)
+    sessions = (
+        PracticeSession.query.filter(
+            PracticeSession.student_id == student.id,
+            PracticeSession.started_at >= datetime.combine(start_date, datetime.min.time()),
+            PracticeSession.started_at <= datetime.combine(end_date, datetime.max.time()),
+        )
+        .order_by(PracticeSession.started_at.asc())
+        .all()
+    )
+
+    total_questions = sum(session.total_questions or 0 for session in sessions)
+    total_correct = sum(session.correct_answers or 0 for session in sessions)
+    total_seconds = sum(session.duration_seconds or 0 for session in sessions)
+    average_score = (total_correct / total_questions * 100) if total_questions else 0.0
+
+    session_ids = [session.id for session in sessions]
+    exercises = []
+    if session_ids:
+        exercises = SessionExercise.query.filter(SessionExercise.session_id.in_(session_ids)).all()
+
+    category_lookup = {category.code: category for category in QuestionCategory.query.all()}
+    domain_labels = {code: label for code, label in DOMAIN_CHOICES}
+    theme_stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"total": 0, "correct": 0})
+    error_counts: Dict[str, Dict[str, object]] = {}
+    for exercise in exercises:
+        category = category_lookup.get(exercise.category)
+        domain = category.domain if category and category.domain else "autre"
+        theme_stats[domain]["total"] += 1
+        if exercise.is_correct:
+            theme_stats[domain]["correct"] += 1
+        if not exercise.is_correct:
+            key = f"{exercise.category}:{exercise.prompt}"
+            entry = error_counts.setdefault(
+                key, {"prompt": exercise.prompt, "category": exercise.category, "count": 0}
+            )
+            entry["count"] += 1
+
+    theme_summary = []
+    for domain, values in theme_stats.items():
+        total = values["total"]
+        correct = values["correct"]
+        rate = (correct / total * 100) if total else 0
+        theme_summary.append(
+            {
+                "domain": domain_labels.get(domain, domain),
+                "total": total,
+                "correct": correct,
+                "rate": round(rate, 1) if rate else 0,
+            }
+        )
+    theme_summary = sorted(theme_summary, key=lambda item: item["domain"])
+    recurring_errors = sorted(
+        error_counts.values(), key=lambda item: item["count"], reverse=True
+    )[:10]
+
+    report_format = request.args.get("format", "csv").lower()
+    if report_format == "pdf":
+        lines = [
+            f"Bilan trimestriel - {student.full_name()}",
+            f"Période: {start_date.strftime('%d/%m/%Y')} au {end_date.strftime('%d/%m/%Y')}",
+            f"Sessions: {len(sessions)}",
+            f"Score moyen: {average_score:.1f}%",
+            f"Temps total: {round(total_seconds / 60, 1)} min",
+            "",
+            "Evolution par theme:",
+        ]
+        for item in theme_summary:
+            lines.append(
+                f"- {item['domain']}: {item['rate']}% ({item['correct']}/{item['total']})"
+            )
+        if recurring_errors:
+            lines.append("")
+            lines.append("Erreurs recurrentes:")
+            for error in recurring_errors:
+                lines.append(f"- {error['prompt']} ({error['count']}x)")
+        pdf_bytes = _build_simple_pdf(lines)
+        filename = f"bilan_{student.first_name}_{year_value}_T{quarter_value}.pdf"
+        return current_app.response_class(
+            pdf_bytes,
+            mimetype="application/pdf",
+            headers={
+                "Content-Disposition": f"attachment; filename={filename}"
+            },
+        )
+
+    output = StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Bilan trimestriel", student.full_name()])
+    writer.writerow(["Periode", start_date.isoformat(), end_date.isoformat()])
+    writer.writerow([])
+    writer.writerow(["Sessions", len(sessions)])
+    writer.writerow(["Score moyen (%)", f"{average_score:.1f}"])
+    writer.writerow(["Temps total (minutes)", f"{round(total_seconds / 60, 1)}"])
+    writer.writerow([])
+    writer.writerow(["Evolution par theme"])
+    writer.writerow(["Theme", "Questions", "Bonnes reponses", "Taux (%)"])
+    for item in theme_summary:
+        writer.writerow([item["domain"], item["total"], item["correct"], item["rate"]])
+    if recurring_errors:
+        writer.writerow([])
+        writer.writerow(["Erreurs recurrentes"])
+        writer.writerow(["Question", "Occurrences", "Categorie"])
+        for error in recurring_errors:
+            writer.writerow([error["prompt"], error["count"], error["category"]])
+
+    filename = f"bilan_{student.first_name}_{year_value}_T{quarter_value}.csv"
+    return current_app.response_class(
+        output.getvalue(),
+        mimetype="text/csv",
+        headers={
+            "Content-Disposition": f"attachment; filename={filename}"
+        },
     )
 
 
@@ -1180,6 +1762,8 @@ def create_prepared_exercise():
         use_time_limit = request.form.get("use_time_limit") == "on"
         minutes_raw = request.form.get("limit_minutes", "0").strip()
         seconds_raw = request.form.get("limit_seconds", "0").strip()
+        instructions_fr = sanitize_text_input(request.form.get("instructions_fr", "")) or None
+        instructions_en = sanitize_text_input(request.form.get("instructions_en", "")) or None
 
         try:
             minutes_value = int(minutes_raw or 0)
@@ -1234,6 +1818,8 @@ def create_prepared_exercise():
             student=student_obj,
             use_time_limit=use_time_limit,
             time_limit_seconds=total_seconds if use_time_limit else None,
+            instructions_fr=instructions_fr,
+            instructions_en=instructions_en,
         )
         db.session.add(exercise_set)
         db.session.flush()
@@ -1261,6 +1847,217 @@ def create_prepared_exercise():
         students=students,
         categories=categories,
     )
+
+
+@bp.route("/parents/import", methods=["GET", "POST"])
+@_parent_required
+def import_exercises():
+    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
+    categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
+    category_codes = {category.code for category in categories}
+
+    if request.method == "POST":
+        title = request.form.get("title", "").strip() or "Import de questions"
+        student_id = request.form.get("student_id")
+        import_format = request.form.get("format", "csv")
+        delimiter = request.form.get("delimiter", ",").strip() or ","
+        instructions_fr = sanitize_text_input(request.form.get("instructions_fr", "")) or None
+        instructions_en = sanitize_text_input(request.form.get("instructions_en", "")) or None
+        file = request.files.get("file")
+
+        if not file or not file.filename:
+            flash("Ajoutez un fichier à importer.", "danger")
+            return redirect(url_for("main.import_exercises"))
+
+        content = file.read().decode("utf-8", errors="ignore")
+        rows = _parse_import_rows(content, import_format, delimiter)
+        if not rows:
+            flash("Aucune question valide trouvée dans le fichier.", "warning")
+            return redirect(url_for("main.import_exercises"))
+
+        student_obj: Optional[Student] = None
+        if student_id and student_id != "all":
+            try:
+                student_obj = Student.query.get(int(student_id))
+            except (TypeError, ValueError):
+                student_obj = None
+            if student_obj and student_obj.role != "student":
+                student_obj = None
+
+        exercise_set = PreparedExerciseSet(
+            title=title,
+            student=student_obj,
+            instructions_fr=instructions_fr,
+            instructions_en=instructions_en,
+        )
+        db.session.add(exercise_set)
+        db.session.flush()
+
+        for index, row in enumerate(rows):
+            prompt = sanitize_text_input(row["prompt"])
+            answer = sanitize_text_input(row["answer"])
+            category_code = row.get("category", "custom").strip() or "custom"
+            if category_code not in category_codes:
+                category_code = "custom"
+            content_valid, content_message = validate_question_content(prompt, answer)
+            if not content_valid:
+                flash(f"Question ignorée : {content_message}", "warning")
+                continue
+            db.session.add(
+                PreparedExerciseQuestion(
+                    exercise_set_id=exercise_set.id,
+                    prompt=prompt,
+                    answer=answer,
+                    category_code=category_code,
+                    position=index,
+                )
+            )
+
+        db.session.commit()
+        flash("Import terminé : questions ajoutées.", "success")
+        return redirect(url_for("main.parent_dashboard"))
+
+    return render_template(
+        "import_exercises.html",
+        students=students,
+        categories=categories,
+    )
+
+
+@bp.route("/exercise-bank")
+@_login_required
+def exercise_bank():
+    domain = request.args.get("domain") or ""
+    cefr = request.args.get("cefr") or ""
+    grade = request.args.get("grade") or ""
+    trimester = request.args.get("trimester") or ""
+    categories = _filter_categories(domain, cefr, grade, trimester)
+    prereq_map = _build_prerequisite_map()
+    exercise_items = []
+    if categories:
+        category_ids = [category.id for category in categories]
+        exercise_items = (
+            ExerciseItem.query.filter(ExerciseItem.category_id.in_(category_ids))
+            .order_by(ExerciseItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+
+    return render_template(
+        "exercise_bank.html",
+        categories=categories,
+        domain_choices=DOMAIN_CHOICES,
+        cefr_levels=CEFR_LEVELS,
+        grade_levels=GRADE_LEVELS,
+        trimester_choices=TRIMESTER_CHOICES,
+        selected_domain=domain,
+        selected_cefr=cefr,
+        selected_grade=grade,
+        selected_trimester=trimester,
+        prereq_map=prereq_map,
+        exercise_items=exercise_items,
+    )
+
+
+@bp.route("/exercise-bank/generate", methods=["POST"])
+@_login_required
+def generate_exercises_from_bank():
+    domain = request.form.get("domain") or ""
+    cefr = request.form.get("cefr") or ""
+    grade = request.form.get("grade") or ""
+    trimester = request.form.get("trimester") or ""
+    difficulty = normalize_difficulty(request.form.get("difficulty"))
+    category_code = request.form.get("category_code") or ""
+    try:
+        quantity = int(request.form.get("quantity", 10))
+    except ValueError:
+        quantity = 10
+    quantity = max(1, min(30, quantity))
+
+    categories = _filter_categories(domain, cefr, grade, trimester)
+    if category_code and category_code != "all":
+        categories = [category for category in categories if category.code == category_code]
+
+    category_codes = [category.code for category in categories]
+    generated = generate_exercises_for_categories(
+        category_codes, quantity, difficulty=difficulty
+    ) if category_codes else []
+    prereq_map = _build_prerequisite_map()
+    exercise_items = []
+    if categories:
+        category_ids = [category.id for category in categories]
+        exercise_items = (
+            ExerciseItem.query.filter(ExerciseItem.category_id.in_(category_ids))
+            .order_by(ExerciseItem.created_at.desc())
+            .limit(50)
+            .all()
+        )
+
+    return render_template(
+        "exercise_bank.html",
+        categories=categories,
+        domain_choices=DOMAIN_CHOICES,
+        cefr_levels=CEFR_LEVELS,
+        grade_levels=GRADE_LEVELS,
+        trimester_choices=TRIMESTER_CHOICES,
+        selected_domain=domain,
+        selected_cefr=cefr,
+        selected_grade=grade,
+        selected_trimester=trimester,
+        selected_difficulty=difficulty,
+        selected_category=category_code,
+        quantity=quantity,
+        prereq_map=prereq_map,
+        generated_exercises=generated,
+        exercise_items=exercise_items,
+    )
+
+
+@bp.route("/exercise-bank/items", methods=["POST"])
+@_parent_required
+def add_exercise_item():
+    category_code = request.form.get("category_code", "").strip()
+    difficulty_raw = request.form.get("difficulty", "").strip()
+    difficulty = difficulty_raw if difficulty_raw == "any" else normalize_difficulty(difficulty_raw)
+    prompt = sanitize_text_input(request.form.get("prompt", ""))
+    answer = sanitize_text_input(request.form.get("answer", ""))
+
+    category = QuestionCategory.query.filter_by(code=category_code).first()
+    if not category:
+        flash("Catégorie invalide.", "danger")
+        return redirect(url_for("main.exercise_bank"))
+
+    if not prompt or not answer:
+        flash("La question et la réponse sont obligatoires.", "danger")
+        return redirect(url_for("main.exercise_bank"))
+
+    content_valid, content_message = validate_question_content(prompt, answer)
+    if not content_valid:
+        flash(f"Question invalide : {content_message}", "danger")
+        return redirect(url_for("main.exercise_bank"))
+
+    db.session.add(
+        ExerciseItem(
+            category_id=category.id,
+            difficulty=difficulty,
+            prompt=prompt,
+            answer=answer,
+            is_active=True,
+        )
+    )
+    db.session.commit()
+    flash("Question ajoutée dans la banque.", "success")
+    return redirect(url_for("main.exercise_bank"))
+
+
+@bp.route("/exercise-bank/items/<int:item_id>/delete", methods=["POST"])
+@_parent_required
+def delete_exercise_item(item_id: int):
+    item = ExerciseItem.query.get_or_404(item_id)
+    db.session.delete(item)
+    db.session.commit()
+    flash("Question supprimée.", "success")
+    return redirect(url_for("main.exercise_bank"))
 
 
 @bp.route("/parents/categories/new", methods=["POST"])

@@ -281,6 +281,24 @@ PRESENT_SIMPLE_ITEMS: Dict[str, List[Tuple[str, str]]] = {
     ],
 }
 
+PRESENT_SIMPLE_SUBJECTS: Dict[str, List[str]] = {
+    "beginner": ["I", "you", "he", "she", "we", "they"],
+    "intermediate": ["my brother", "her parents", "the class", "our teacher", "my friends"],
+    "advanced": ["the committee", "each student", "the headmaster", "every visitor", "the science club"],
+}
+
+PRESENT_SIMPLE_VERBS: Dict[str, List[str]] = {
+    "beginner": ["play", "like", "go", "have", "eat", "watch"],
+    "intermediate": ["study", "finish", "carry", "miss", "do", "read"],
+    "advanced": ["organize", "discuss", "prefer", "travel", "explain", "practice"],
+}
+
+PRESENT_SIMPLE_COMPLEMENTS: Dict[str, List[str]] = {
+    "beginner": ["to school by bus", "every day", "in the morning", "after lunch"],
+    "intermediate": ["after dinner", "on Mondays", "with their friends", "in the library"],
+    "advanced": ["every Thursday evening", "when the bell rings", "before the project starts", "during the break"],
+}
+
 PRONOUN_ITEMS: Dict[str, List[Tuple[str, str]]] = {
     "beginner": [
         ("Choisis le bon pronom : ___ is my sister (she/her).", "she"),
@@ -335,6 +353,38 @@ def normalize_difficulty(raw_value: Optional[str]) -> str:
     return DIFFICULTY_LEVELS[0]
 
 
+def _custom_items(category: Optional[str], difficulty: str) -> List[ExercisePrompt]:
+    try:
+        from .models import ExerciseItem, QuestionCategory
+    except Exception:
+        return []
+    if not category:
+        return []
+    try:
+        items = (
+            ExerciseItem.query.join(QuestionCategory)
+            .filter(
+                QuestionCategory.code == category,
+                ExerciseItem.is_active.is_(True),
+                ExerciseItem.difficulty.in_([difficulty, "any"]),
+            )
+            .all()
+        )
+    except Exception:
+        return []
+    return [
+        ExercisePrompt(prompt=item.prompt, answer=item.answer, category=category)
+        for item in items
+    ]
+
+
+def _random_custom_item(category: Optional[str], difficulty: str) -> Optional[ExercisePrompt]:
+    items = _custom_items(category, difficulty)
+    if not items:
+        return None
+    return random.choice(items)
+
+
 def _pooled_dict(data: Dict[str, Dict[str, str]], difficulty: str) -> Dict[str, str]:
     merged: Dict[str, str] = {}
     for level in DIFFICULTY_LEVELS:
@@ -362,6 +412,23 @@ def _pooled_list(data: Dict[str, List[Tuple[str, str]]], difficulty: str) -> Lis
         if data.get(level):
             return data[level]
     return []
+
+
+def _is_third_person_singular(subject: str) -> bool:
+    lowered = subject.strip().lower()
+    return lowered in {"he", "she", "it"} or not any(
+        lowered.startswith(token) for token in {"i", "you", "we", "they"}
+    )
+
+
+def _conjugate_present_simple(subject: str, base: str) -> str:
+    if not _is_third_person_singular(subject):
+        return base
+    if base.endswith(("ch", "sh", "x", "s", "z", "o")):
+        return f"{base}es"
+    if base.endswith("y") and len(base) > 1 and base[-2] not in "aeiou":
+        return f"{base[:-1]}ies"
+    return f"{base}s"
 
 
 def _number_range_for_level(difficulty: str) -> range:
@@ -541,17 +608,31 @@ def _generate_hobbies_vocabulary(difficulty: str) -> ExercisePrompt:
 
 
 def _generate_present_simple(difficulty: str) -> ExercisePrompt:
-    pool = _pooled_list(PRESENT_SIMPLE_ITEMS, difficulty)
-    statement, answer = random.choice(pool)
+    level_items = PRESENT_SIMPLE_ITEMS.get(difficulty) or []
+    if level_items and random.random() < 0.5:
+        statement, answer = random.choice(level_items)
+        return ExercisePrompt(
+            prompt=statement,
+            answer=answer,
+            category="grammar_present_simple",
+        )
+
+    subject_pool = PRESENT_SIMPLE_SUBJECTS.get(difficulty) or PRESENT_SIMPLE_SUBJECTS["beginner"]
+    verb_pool = PRESENT_SIMPLE_VERBS.get(difficulty) or PRESENT_SIMPLE_VERBS["beginner"]
+    complement_pool = PRESENT_SIMPLE_COMPLEMENTS.get(difficulty) or PRESENT_SIMPLE_COMPLEMENTS["beginner"]
+    subject = random.choice(subject_pool)
+    base_verb = random.choice(verb_pool)
+    complement = random.choice(complement_pool)
+    answer = _conjugate_present_simple(subject, base_verb)
     return ExercisePrompt(
-        prompt=statement,
+        prompt=f"Complète : {subject} ___ {complement} ({base_verb}).",
         answer=answer,
         category="grammar_present_simple",
     )
 
 
 def _generate_pronoun_exercise(difficulty: str) -> ExercisePrompt:
-    pool = _pooled_list(PRONOUN_ITEMS, difficulty)
+    pool = PRONOUN_ITEMS.get(difficulty) or _pooled_list(PRONOUN_ITEMS, difficulty)
     statement, answer = random.choice(pool)
     return ExercisePrompt(
         prompt=statement,
@@ -607,14 +688,21 @@ def generate_default_exercises(quantity: int = 20, difficulty: str = "beginner")
     exercises: List[ExercisePrompt] = []
     eligible = [spec for spec in GENERATOR_REGISTRY if normalized in spec.difficulties]
     fallback = eligible or GENERATOR_REGISTRY
+    custom_categories = list({spec.category for spec in GENERATOR_REGISTRY})
 
     seen_signatures = set()
     attempts = 0
     max_attempts = max(10, quantity * 10)
 
     while len(exercises) < quantity and attempts < max_attempts:
-        spec = random.choice(eligible or fallback)
-        prompt = spec.builder(normalized)
+        custom_prompt = None
+        if custom_categories and random.random() < 0.35:
+            custom_prompt = _random_custom_item(random.choice(custom_categories), normalized)
+        if custom_prompt:
+            prompt = custom_prompt
+        else:
+            spec = random.choice(eligible or fallback)
+            prompt = spec.builder(normalized)
         signature = (prompt.category, prompt.prompt.strip().lower())
         if signature in seen_signatures:
             attempts += 1
@@ -663,8 +751,12 @@ def generate_exercises_for_categories(
 
     while len(exercises) < quantity and attempts < max_attempts:
         selected_category = random.choices(weighted_categories, weights=weights, k=1)[0]
-        spec = random.choice(specs_by_category[selected_category])
-        prompt = spec.builder(normalized)
+        custom_prompt = _random_custom_item(selected_category, normalized)
+        if custom_prompt and random.random() < 0.7:
+            prompt = custom_prompt
+        else:
+            spec = random.choice(specs_by_category[selected_category])
+            prompt = spec.builder(normalized)
         signature = (prompt.category, prompt.prompt.strip().lower())
         if signature in seen_signatures:
             attempts += 1

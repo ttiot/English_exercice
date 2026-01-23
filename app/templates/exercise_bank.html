@@ -1,0 +1,158 @@
+{% extends 'base.html' %}
+{% block title %}Banque d'exercices{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Banque d'exercices</h2>
+    <p class="muted">Filtrez les catégories par niveau et thème.</p>
+    <form method="get" class="inline-form">
+      <select name="domain">
+        <option value="">Tous les thèmes</option>
+        {% for code, label in domain_choices %}
+          <option value="{{ code }}" {% if selected_domain == code %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+      <select name="cefr">
+        <option value="">Tous les niveaux CECRL</option>
+        {% for level in cefr_levels %}
+          <option value="{{ level }}" {% if selected_cefr == level %}selected{% endif %}>{{ level }}</option>
+        {% endfor %}
+      </select>
+      <select name="grade">
+        <option value="">Tous les niveaux scolaires</option>
+        {% for grade in grade_levels %}
+          <option value="{{ grade }}" {% if selected_grade == grade %}selected{% endif %}>{{ grade }}</option>
+        {% endfor %}
+      </select>
+      <select name="trimester">
+        <option value="">Tous les trimestres</option>
+        {% for trim in trimester_choices %}
+          <option value="{{ trim }}" {% if selected_trimester|string == trim|string %}selected{% endif %}>T{{ trim }}</option>
+        {% endfor %}
+      </select>
+      <button class="btn btn-secondary btn-small" type="submit">Filtrer</button>
+    </form>
+  </div>
+
+  <div class="card">
+    <h3>Générer de nouvelles questions</h3>
+    <form method="post" action="{{ url_for('main.generate_exercises_from_bank') }}" class="inline-form">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input type="hidden" name="domain" value="{{ selected_domain }}" />
+      <input type="hidden" name="cefr" value="{{ selected_cefr }}" />
+      <input type="hidden" name="grade" value="{{ selected_grade }}" />
+      <input type="hidden" name="trimester" value="{{ selected_trimester }}" />
+      <select name="category_code">
+        <option value="all">Toutes les catégories filtrées</option>
+        {% for category in categories %}
+          <option value="{{ category.code }}" {% if selected_category == category.code %}selected{% endif %}>{{ category.name }}</option>
+        {% endfor %}
+      </select>
+      <select name="difficulty">
+        <option value="beginner" {% if selected_difficulty == 'beginner' %}selected{% endif %}>Débutant</option>
+        <option value="intermediate" {% if selected_difficulty == 'intermediate' %}selected{% endif %}>Intermédiaire</option>
+        <option value="advanced" {% if selected_difficulty == 'advanced' %}selected{% endif %}>Avancé</option>
+      </select>
+      <input name="quantity" type="number" min="1" max="30" value="{{ quantity or 10 }}" />
+      <button class="btn btn-secondary btn-small" type="submit">Générer</button>
+    </form>
+    {% if generated_exercises %}
+      <div class="question-stack">
+        {% for item in generated_exercises %}
+          <div class="question-card">
+            <div class="question-header">
+              <h4>Question {{ loop.index }}</h4>
+              <span class="badge">{{ item.category }}</span>
+            </div>
+            <p>{{ item.prompt }}</p>
+            <p class="muted">Réponse attendue : <strong>{{ item.answer }}</strong></p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Lance une génération pour visualiser les questions proposées.</p>
+    {% endif %}
+  </div>
+
+  {% if current_user and (current_user.is_parent() or current_user.is_admin()) %}
+    <div class="card">
+      <h3>Ajouter du contenu personnalisé</h3>
+      <form method="post" action="{{ url_for('main.add_exercise_item') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <label for="category_code">Catégorie</label>
+        <select id="category_code" name="category_code" required>
+          {% for category in categories %}
+            <option value="{{ category.code }}">{{ category.name }}</option>
+          {% endfor %}
+        </select>
+        <label for="difficulty">Difficulté</label>
+        <select id="difficulty" name="difficulty">
+          <option value="beginner">Débutant</option>
+          <option value="intermediate">Intermédiaire</option>
+          <option value="advanced">Avancé</option>
+          <option value="any">Tous niveaux</option>
+        </select>
+        <label for="prompt">Question</label>
+        <textarea id="prompt" name="prompt" rows="2" required placeholder="Ex. Complète : He ___ (to go) to school by bus."></textarea>
+        <label for="answer">Réponse</label>
+        <input id="answer" name="answer" required placeholder="Ex. goes" />
+        <button class="btn btn-primary" type="submit">Ajouter</button>
+      </form>
+    </div>
+
+    <div class="card">
+      <h3>Contenus personnalisés</h3>
+      {% if exercise_items %}
+        <div class="question-stack">
+          {% for item in exercise_items %}
+            <div class="question-card">
+              <div class="question-header">
+                <h4>{{ item.category.name }}</h4>
+                <span class="badge">{{ item.difficulty }}</span>
+              </div>
+              <p>{{ item.prompt }}</p>
+              <p class="muted">Réponse : <strong>{{ item.answer }}</strong></p>
+              <form method="post" action="{{ url_for('main.delete_exercise_item', item_id=item.id) }}">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button class="btn btn-danger btn-small" type="submit" onclick="return confirm('Supprimer cette question ?');">Supprimer</button>
+              </form>
+            </div>
+          {% endfor %}
+        </div>
+      {% else %}
+        <p class="muted">Aucun contenu personnalisé pour les filtres actuels.</p>
+      {% endif %}
+    </div>
+  {% endif %}
+
+  <div class="card">
+    <h3>Catégories disponibles</h3>
+    {% if categories %}
+      <div class="prepared-list">
+        {% for category in categories %}
+          <article class="prepared-item">
+            <header>
+              <h4>{{ category.name }}</h4>
+              <span class="badge">{{ category.code }}</span>
+            </header>
+            <p class="muted">
+              Thème : {{ category.domain or '—' }} • CECRL {{ category.cecrl_level or '—' }} •
+              Niveau {{ category.grade_level or '—' }} {% if category.trimester %}(T{{ category.trimester }}){% endif %}
+            </p>
+            {% set prerequisites = prereq_map.get(category.id, []) %}
+            {% if prerequisites %}
+              <p class="muted">
+                Prérequis :
+                {% for prereq in prerequisites %}
+                  {{ prereq.prerequisite.name }} ({{ prereq.min_mastery }}%)
+                  {% if not loop.last %}•{% endif %}
+                {% endfor %}
+              </p>
+            {% endif %}
+          </article>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Aucune catégorie ne correspond aux filtres.</p>
+    {% endif %}
+  </div>
+{% endblock %}

@@ -9,6 +9,8 @@
       </div>
       <div class="card-actions">
         <a class="btn btn-primary" href="{{ url_for('main.create_prepared_exercise') }}">Nouvel exercice préparé</a>
+        <a class="btn btn-secondary" href="{{ url_for('main.import_exercises') }}">Importer des listes</a>
+        <a class="btn btn-secondary" href="{{ url_for('main.exercise_bank') }}">Banque d'exercices</a>
       </div>
     </div>
   </div>
@@ -22,8 +24,10 @@
             <th>Élève</th>
             <th>Sessions complétées</th>
             <th>Score moyen</th>
+            <th>Temps cumulé</th>
             <th>Accès</th>
             <th>Gestion</th>
+            <th>Bilan trimestriel</th>
           </tr>
         </thead>
         <tbody>
@@ -32,14 +36,84 @@
               <td>{{ item.student.full_name() }}</td>
               <td>{{ item.total_sessions }}</td>
               <td>{{ item.average_score }}%</td>
+              <td>{{ item.total_minutes }} min</td>
               <td><a href="{{ url_for('main.view_student', student_id=item.student.id) }}">Voir le profil</a></td>
               <td><a href="{{ url_for('main.manage_student', student_id=item.student.id) }}">Modifier</a></td>
-          </tr>
+              <td>
+                <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
+                •
+                <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='pdf') }}">PDF</a>
+              </td>
+            </tr>
           {% endfor %}
         </tbody>
       </table>
     {% else %}
       <p>Pas encore de données. Invitez votre enfant à démarrer une session !</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Objectifs hebdo & défis (semaine du {{ week_start.strftime('%d/%m') }} au {{ week_end.strftime('%d/%m') }})</h3>
+    {% if stats %}
+      <div class="responsive-grid">
+        {% for item in stats %}
+          <div class="stats-card">
+            <h4>{{ item.student.full_name() }}</h4>
+            <p>
+              Progression : {{ item.weekly_progress.sessions }}/{{ item.weekly_goal.target_sessions if item.weekly_goal else 3 }} sessions •
+              {{ item.weekly_progress.minutes }}/{{ item.weekly_goal.target_minutes if item.weekly_goal else 45 }} min •
+              {{ item.weekly_progress.accuracy }}% / {{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}% •
+              {{ item.weekly_progress.challenges }}/{{ item.weekly_goal.target_challenges if item.weekly_goal else 1 }} défis
+            </p>
+            <form class="inline-form" method="post" action="{{ url_for('main.update_weekly_goal', student_id=item.student.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <input name="target_sessions" type="number" min="1" value="{{ item.weekly_goal.target_sessions if item.weekly_goal else 3 }}" />
+              <input name="target_minutes" type="number" min="5" value="{{ item.weekly_goal.target_minutes if item.weekly_goal else 45 }}" />
+              <input name="target_accuracy" type="number" min="0" max="100" value="{{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}" />
+              <input name="target_challenges" type="number" min="0" value="{{ item.weekly_goal.target_challenges if item.weekly_goal else 1 }}" />
+              <button class="btn btn-secondary btn-small" type="submit">Mettre à jour</button>
+            </form>
+            <p class="muted">Badges obtenus : {{ item.earned_badges }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    {% else %}
+      <p class="muted">Ajoutez des élèves pour définir leurs objectifs hebdomadaires.</p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Analyse détaillée par élève</h3>
+    {% if stats %}
+      {% for item in stats %}
+        <div class="prepared-item">
+          <h4>{{ item.student.full_name() }}</h4>
+          <p class="muted">Temps total : {{ item.total_minutes }} min</p>
+          {% if item.theme_summary %}
+            <p><strong>Évolution par thème</strong></p>
+            <ul>
+              {% for theme in item.theme_summary %}
+                <li>{{ theme.domain }} : {{ theme.rate }}% ({{ theme.correct }}/{{ theme.total }})</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">Pas encore de données par thème.</p>
+          {% endif %}
+          {% if item.recurring_errors %}
+            <p><strong>Erreurs récurrentes</strong></p>
+            <ul>
+              {% for error in item.recurring_errors %}
+                <li>{{ error.prompt }} ({{ error.count }}x)</li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="muted">Aucune erreur récurrente pour le moment.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="muted">Pas encore de données détaillées.</p>
     {% endif %}
   </div>
 

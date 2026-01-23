@@ -76,6 +76,9 @@ class PracticeSession(db.Model, TimestampMixin):
     correct_answers = db.Column(db.Integer, nullable=False, default=0)
     difficulty = db.Column(db.String(20), nullable=False, default="beginner")
     duration_seconds = db.Column(db.Integer, nullable=True)
+    session_type = db.Column(db.String(20), nullable=False, default="practice")
+    instructions_fr = db.Column(db.Text, nullable=True)
+    instructions_en = db.Column(db.Text, nullable=True)
 
     exercises = db.relationship(
         "SessionExercise",
@@ -146,6 +149,8 @@ class PreparedExerciseSet(db.Model, TimestampMixin):
     is_used = db.Column(db.Boolean, default=False, nullable=False)
     use_time_limit = db.Column(db.Boolean, default=False, nullable=False)
     time_limit_seconds = db.Column(db.Integer, nullable=True)
+    instructions_fr = db.Column(db.Text, nullable=True)
+    instructions_en = db.Column(db.Text, nullable=True)
 
     student = db.relationship("Student", backref=db.backref("prepared_sets", lazy=True))
     questions = db.relationship(
@@ -171,6 +176,83 @@ class PreparedExerciseQuestion(db.Model, TimestampMixin):
     answer = db.Column(db.String(255), nullable=False)
     category_code = db.Column(db.String(80), nullable=False, default="custom")
     position = db.Column(db.Integer, nullable=False, default=0)
+
+
+class ExerciseItem(db.Model, TimestampMixin):
+    __tablename__ = "exercise_items"
+
+    id = db.Column(db.Integer, primary_key=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=False)
+    difficulty = db.Column(db.String(20), nullable=False, default="beginner")
+    prompt = db.Column(db.Text, nullable=False)
+    answer = db.Column(db.String(255), nullable=False)
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+
+    category = db.relationship("QuestionCategory", backref=db.backref("exercise_items", lazy=True))
+
+
+class WeeklyGoal(db.Model, TimestampMixin):
+    __tablename__ = "weekly_goals"
+    __table_args__ = (
+        db.UniqueConstraint("student_id", "week_start", name="uq_weekly_goal_student_week"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    week_start = db.Column(db.Date, nullable=False)
+    target_sessions = db.Column(db.Integer, nullable=False, default=3)
+    target_minutes = db.Column(db.Integer, nullable=False, default=45)
+    target_accuracy = db.Column(db.Float, nullable=False, default=70.0)
+    target_challenges = db.Column(db.Integer, nullable=False, default=1)
+
+    student = db.relationship("Student", backref=db.backref("weekly_goals", lazy=True))
+
+
+class Badge(db.Model, TimestampMixin):
+    __tablename__ = "badges"
+
+    id = db.Column(db.Integer, primary_key=True)
+    code = db.Column(db.String(80), unique=True, nullable=False)
+    name = db.Column(db.String(120), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    category_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=True)
+    min_mastery = db.Column(db.Float, nullable=False, default=80.0)
+    min_streak = db.Column(db.Integer, nullable=False, default=2)
+
+    category = db.relationship("QuestionCategory", backref=db.backref("badges", lazy=True))
+
+
+class StudentBadge(db.Model, TimestampMixin):
+    __tablename__ = "student_badges"
+    __table_args__ = (
+        db.UniqueConstraint("student_id", "badge_id", name="uq_student_badge"),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    badge_id = db.Column(db.Integer, db.ForeignKey("badges.id"), nullable=False)
+    awarded_at = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+
+    student = db.relationship("Student", backref=db.backref("badges", lazy=True))
+    badge = db.relationship("Badge", backref=db.backref("awards", lazy=True))
+
+
+class ReviewPlan(db.Model, TimestampMixin):
+    __tablename__ = "review_plans"
+    __table_args__ = (
+        db.UniqueConstraint(
+            "student_id", "category_id", "due_date", name="uq_review_plan_student_category_date"
+        ),
+    )
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(db.Integer, db.ForeignKey("students.id"), nullable=False)
+    category_id = db.Column(db.Integer, db.ForeignKey("question_categories.id"), nullable=False)
+    due_date = db.Column(db.Date, nullable=False)
+    completed = db.Column(db.Boolean, default=False, nullable=False)
+
+    student = db.relationship("Student", backref=db.backref("review_plans", lazy=True))
+    category = db.relationship("QuestionCategory", backref=db.backref("review_plans", lazy=True))
 
 
 class SkillPrerequisite(db.Model, TimestampMixin):
@@ -373,6 +455,38 @@ DEFAULT_CATEGORY_METADATA: Dict[str, Dict[str, object]] = {
 }
 
 
+def ensure_default_badges() -> None:
+    existing = {badge.code: badge for badge in Badge.query.all()}
+    categories = {category.code: category for category in QuestionCategory.query.all()}
+    created = False
+
+    for code, label in DEFAULT_CATEGORY_NAMES:
+        category = categories.get(code)
+        if not category:
+            continue
+        badge_code = f"{code}_mastery"
+        badge = existing.get(badge_code)
+        if not badge:
+            badge = Badge(
+                code=badge_code,
+                name=f"Maîtrise {label}",
+                description=f"Atteindre 80% de réussite sur {label}.",
+                category=category,
+                min_mastery=80.0,
+                min_streak=2,
+            )
+            db.session.add(badge)
+            created = True
+        else:
+            badge.category = category
+            badge.min_mastery = 80.0
+            badge.min_streak = 2
+            created = True
+
+    if created:
+        db.session.commit()
+
+
 def ensure_default_categories() -> None:
     existing = {
         category.code: category for category in QuestionCategory.query.all()
@@ -528,6 +642,46 @@ def ensure_schema_migrations() -> None:
             )
             needs_commit = True
 
+        if "time_limit_seconds" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN time_limit_seconds INTEGER")
+            )
+            needs_commit = True
+
+        if "difficulty" not in session_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE practice_sessions ADD COLUMN difficulty VARCHAR(20) DEFAULT 'beginner'"
+                )
+            )
+            db.session.execute(
+                text(
+                    "UPDATE practice_sessions SET difficulty = 'beginner' WHERE difficulty IS NULL"
+                )
+            )
+            needs_commit = True
+
+        if "session_type" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN session_type VARCHAR(20) DEFAULT 'practice'")
+            )
+            db.session.execute(
+                text("UPDATE practice_sessions SET session_type = 'practice' WHERE session_type IS NULL")
+            )
+            needs_commit = True
+
+        if "instructions_fr" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN instructions_fr TEXT")
+            )
+            needs_commit = True
+
+        if "instructions_en" not in session_columns:
+            db.session.execute(
+                text("ALTER TABLE practice_sessions ADD COLUMN instructions_en TEXT")
+            )
+            needs_commit = True
+
     if "question_categories" in table_names:
         category_columns = {
             column["name"] for column in inspector.get_columns("question_categories")
@@ -538,6 +692,28 @@ def ensure_schema_migrations() -> None:
                 text("ALTER TABLE question_categories ADD COLUMN domain VARCHAR(50)")
             )
             needs_commit = True
+
+    if "student_skill_progress" in table_names:
+        progress_columns = {
+            column["name"] for column in inspector.get_columns("student_skill_progress")
+        }
+
+        nullable_fixups = {
+            "mastery": 0.0,
+            "total_attempts": 0,
+            "correct_attempts": 0,
+            "correct_streak": 0,
+        }
+        for column_name, default_value in nullable_fixups.items():
+            if column_name in progress_columns:
+                db.session.execute(
+                    text(
+                        f"UPDATE student_skill_progress SET {column_name} = :value "
+                        f"WHERE {column_name} IS NULL"
+                    ),
+                    {"value": default_value},
+                )
+                needs_commit = True
 
         if "cecrl_level" not in category_columns:
             db.session.execute(
@@ -572,24 +748,37 @@ def ensure_schema_migrations() -> None:
             )
             needs_commit = True
 
-        if "time_limit_seconds" not in session_columns:
+    if "prepared_exercise_sets" in table_names:
+        prepared_columns = {
+            column["name"] for column in inspector.get_columns("prepared_exercise_sets")
+        }
+
+        if "instructions_fr" not in prepared_columns:
             db.session.execute(
-                text("ALTER TABLE practice_sessions ADD COLUMN time_limit_seconds INTEGER")
+                text("ALTER TABLE prepared_exercise_sets ADD COLUMN instructions_fr TEXT")
             )
             needs_commit = True
 
-        if "difficulty" not in session_columns:
+        if "instructions_en" not in prepared_columns:
             db.session.execute(
-                text(
-                    "ALTER TABLE practice_sessions ADD COLUMN difficulty VARCHAR(20) DEFAULT 'beginner'"
-                )
-            )
-            db.session.execute(
-                text(
-                    "UPDATE practice_sessions SET difficulty = 'beginner' WHERE difficulty IS NULL"
-                )
+                text("ALTER TABLE prepared_exercise_sets ADD COLUMN instructions_en TEXT")
             )
             needs_commit = True
+
+    if "exercise_items" in table_names:
+        item_columns = {
+            column["name"] for column in inspector.get_columns("exercise_items")
+        }
+
+        if "is_active" not in item_columns:
+            db.session.execute(
+                text("ALTER TABLE exercise_items ADD COLUMN is_active BOOLEAN DEFAULT 1")
+            )
+            db.session.execute(
+                text("UPDATE exercise_items SET is_active = 1 WHERE is_active IS NULL")
+            )
+            needs_commit = True
+
 
     if needs_commit:
         db.session.commit()
@@ -629,9 +818,15 @@ __all__ = [
     "PreparedExercise",
     "PreparedExerciseSet",
     "PreparedExerciseQuestion",
+    "ExerciseItem",
     "QuestionCategory",
+    "WeeklyGoal",
+    "Badge",
+    "StudentBadge",
+    "ReviewPlan",
     "SkillPrerequisite",
     "StudentSkillProgress",
+    "ensure_default_badges",
     "ensure_default_categories",
     "ensure_default_prerequisites",
     "ensure_schema_migrations",

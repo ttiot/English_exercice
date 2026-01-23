@@ -59,6 +59,7 @@ def create_app():
     from . import models  # noqa: F401
     from .models import (
         Student,
+        ensure_default_badges,
         ensure_default_categories,
         ensure_default_prerequisites,
         ensure_admin_account,
@@ -107,6 +108,7 @@ def create_app():
                 db.create_all()
                 ensure_schema_migrations()
                 ensure_default_categories()
+                ensure_default_badges()
                 ensure_default_prerequisites()
                 ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
 

@@ -21,6 +21,7 @@
           <span class="navbar-hello">Bonjour {{ current_user.full_name() | e }}</span>
           {% if current_user.is_parent() or current_user.is_admin() %}
             <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
+            <a class="btn btn-secondary" href="{{ url_for('main.exercise_bank') }}">Banque d'exercices</a>
             <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Espace Parents</a>
           {% else %}
             <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=current_user.id) }}">Mon profil</a>
