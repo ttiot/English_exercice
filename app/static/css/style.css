@@ -729,6 +729,77 @@ code {
   color: var(--accent-cyan);
 }
 
+/* === AI Pool cards === */
+.ai-pool-list {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 1rem;
+}
+
+.ai-pool-card {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 12px;
+  padding: 1rem 1.25rem;
+}
+
+.ai-pool-card--disabled {
+  opacity: 0.5;
+}
+
+.ai-pool-card__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.ai-pool-card__badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.ai-pool-card__question {
+  margin: 0 0 0.5rem;
+  font-size: 1rem;
+  line-height: 1.5;
+}
+
+.ai-pool-card__answer {
+  margin: 0 0 0.75rem;
+  font-size: 0.95rem;
+}
+
+.ai-pool-card__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.25rem;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+
+.ai-pool-card__prompt-details {
+  margin-top: 0.5rem;
+}
+
+.ai-pool-card__prompt-details summary {
+  font-size: 0.82rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.ai-pool-card__prompt-text {
+  font-size: 0.85rem;
+  margin: 0.4rem 0 0;
+  padding-left: 0.75rem;
+  border-left: 2px solid var(--glass-border);
+}
+
 /* === Footer === */
 footer {
   text-align: center;

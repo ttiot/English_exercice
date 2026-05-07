@@ -21,59 +21,60 @@
     </form>
 
     <p class="muted">{{ total }} exercice(s) — page {{ page }}</p>
-    <table class="data-table">
-      <thead>
-        <tr>
-          <th>Date (UTC)</th>
-          <th>Élève d'origine</th>
-          <th>Prompt élève</th>
-          <th>Énoncé</th>
-          <th>Réponse</th>
-          <th>Catégorie</th>
-          <th>Type</th>
-          <th>Difficulté</th>
-          <th>Réutilisé</th>
-          <th>État</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody>
-        {% for item in items %}
-          <tr class="{% if item.is_disabled %}row-muted{% endif %}">
-            <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
-            <td>
-              {% if item.student_id and student_lookup.get(item.student_id) %}
-                {{ student_lookup[item.student_id].full_name() }}
-              {% else %}—{% endif %}
-            </td>
-            <td>{{ item.student_prompt | truncate(80) }}</td>
-            <td>{{ item.prompt | truncate(120) }}</td>
-            <td><code>{{ item.answer }}</code></td>
-            <td>{{ item.category_code }}</td>
-            <td>{{ item.question_type }}</td>
-            <td>{{ item.difficulty }}</td>
-            <td>{{ item.times_used or 0 }}</td>
-            <td>
+
+    <div class="ai-pool-list">
+      {% for item in items %}
+        <div class="ai-pool-card{% if item.is_disabled %} ai-pool-card--disabled{% endif %}">
+          <div class="ai-pool-card__header">
+            <div class="ai-pool-card__badges">
+              <span class="badge">{{ item.question_type }}</span>
+              <span class="badge">{{ item.category_code }}</span>
+              <span class="badge">{{ item.difficulty }}</span>
               {% if item.is_disabled %}
                 <span class="badge badge-warning">désactivé</span>
               {% else %}
                 <span class="badge badge-success">actif</span>
               {% endif %}
-            </td>
-            <td>
-              <form method="post" action="{{ url_for('main.toggle_ai_exercise', item_id=item.id) }}" class="inline-form-compact">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                <button class="btn btn-secondary" type="submit">
-                  {% if item.is_disabled %}Réactiver{% else %}Désactiver{% endif %}
-                </button>
-              </form>
-            </td>
-          </tr>
-        {% else %}
-          <tr><td colspan="11" class="muted">Aucun exercice IA pour l'instant.</td></tr>
-        {% endfor %}
-      </tbody>
-    </table>
+            </div>
+            <form method="post" action="{{ url_for('main.toggle_ai_exercise', item_id=item.id) }}" class="inline-form-compact">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <button class="btn btn-secondary btn-small" type="submit">
+                {% if item.is_disabled %}Réactiver{% else %}Désactiver{% endif %}
+              </button>
+            </form>
+          </div>
+
+          <p class="ai-pool-card__question">{{ item.prompt }}</p>
+          <p class="ai-pool-card__answer">
+            <span class="muted">Réponse :</span> <code>{{ item.answer }}</code>
+          </p>
+
+          <div class="ai-pool-card__meta">
+            <span>
+              <span class="muted">Élève :</span>
+              {% if item.student_id and student_lookup.get(item.student_id) %}
+                {{ student_lookup[item.student_id].full_name() }}
+              {% else %}—{% endif %}
+            </span>
+            <span>
+              <span class="muted">Réutilisé :</span> {{ item.times_used or 0 }}×
+            </span>
+            <span>
+              <span class="muted">Date :</span> {{ item.created_at.strftime('%d/%m/%Y %H:%M') }}
+            </span>
+          </div>
+
+          {% if item.student_prompt %}
+            <details class="ai-pool-card__prompt-details">
+              <summary>Prompt élève</summary>
+              <p class="ai-pool-card__prompt-text muted">{{ item.student_prompt }}</p>
+            </details>
+          {% endif %}
+        </div>
+      {% else %}
+        <p class="muted">Aucun exercice IA pour l'instant.</p>
+      {% endfor %}
+    </div>
 
     {% if total > per_page %}
       <div class="actions">
