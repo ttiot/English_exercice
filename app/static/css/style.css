@@ -200,9 +200,23 @@ form select option { background: #302b63; color: var(--text-primary); }
 .checkbox input[type='checkbox'],
 .checkbox-inline input[type='checkbox'] {
   width: auto;
+  flex-shrink: 0;
   margin: 0;
+  padding: 0;
   border-bottom: none;
   accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
+.checkbox-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-bottom: 1.25rem;
+}
+.checkbox-group .checkbox,
+.checkbox-group .checkbox-inline {
+  margin-bottom: 0;
 }
 
 .form-help {

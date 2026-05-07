@@ -46,14 +46,16 @@
       </p>
 
       <label>Parcours personnalisé</label>
-      <label class="checkbox-inline">
-        <input type="checkbox" name="skill_path" value="1" {% if default_skill_path %}checked{% endif %} />
-        Parcours par compétences (déblocage automatique)
-      </label>
-      <label class="checkbox-inline">
-        <input type="checkbox" name="adaptive_difficulty" value="1" {% if default_adaptive %}checked{% endif %} />
-        Difficulté adaptative selon les résultats
-      </label>
+      <div class="checkbox-group">
+        <label class="checkbox-inline">
+          <input type="checkbox" name="skill_path" value="1" {% if default_skill_path %}checked{% endif %} />
+          Parcours par compétences (déblocage automatique)
+        </label>
+        <label class="checkbox-inline">
+          <input type="checkbox" name="adaptive_difficulty" value="1" {% if default_adaptive %}checked{% endif %} />
+          Difficulté adaptative selon les résultats
+        </label>
+      </div>
       {% if recommended_difficulty %}
         <p class="form-help">
           Suggestion actuelle : {{ difficulty_labels.get(recommended_difficulty, recommended_difficulty|title) }}.
