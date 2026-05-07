@@ -43,7 +43,7 @@
               <p class="word-bank">
                 Banque de mots :
                 {% for option in options %}
-                  <span class="word-bank-chip">{{ option }}</span>{% if not loop.last %}{% endif %}
+                  <span class="word-bank-chip">{{ option }}</span>{% if not loop.last %} / {% endif %}
                 {% endfor %}
               </p>
             {% endif %}

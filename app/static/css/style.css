@@ -219,6 +219,37 @@ form select option { background: #302b63; color: var(--text-primary); }
   margin-bottom: 0;
 }
 
+/* MCQ radio options — override global form label/input rules */
+.mcq-options {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.75rem;
+}
+
+.mcq-option {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-weight: normal;
+  font-size: 1rem;
+  text-transform: none;
+  letter-spacing: normal;
+  color: var(--text-primary);
+  margin-bottom: 0;
+  cursor: pointer;
+}
+
+.mcq-option input[type='radio'] {
+  width: auto;
+  flex-shrink: 0;
+  margin: 0;
+  padding: 0;
+  border-bottom: none;
+  accent-color: var(--accent-cyan);
+  cursor: pointer;
+}
+
 .form-help {
   margin-top: -0.9rem;
   margin-bottom: 1.25rem;
