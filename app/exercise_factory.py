@@ -362,6 +362,283 @@ ADJECTIVE_OPPOSITES: Dict[str, List[Tuple[str, str]]] = {
     ],
 }
 
+# --- Mots interrogatifs (priorité pour le fils du user) -------------------
+
+# Phrases à compléter par UN mot interrogatif. Chaque entrée doit avoir
+# une réponse non-ambiguë. Distractors sont piochés dans INTERROGATIVE_WORDS.
+INTERROGATIVE_WORDS: Tuple[str, ...] = (
+    "What", "When", "Who", "Why", "How", "Where", "Which",
+)
+
+INTERROGATIVE_COMPLETIONS: Dict[str, List[Tuple[str, str]]] = {
+    "beginner": [
+        ("___ is your name?", "What"),
+        ("___ do you live?", "Where"),
+        ("___ are you?", "How"),
+        ("___ is your birthday?", "When"),
+        ("___ is your best friend?", "Who"),
+        ("___ is your favourite colour?", "What"),
+        ("___ do you go to school?", "How"),
+        ("___ are you going?", "Where"),
+        ("___ old are you?", "How"),
+        ("___ is your teacher?", "Who"),
+        ("___ is your favourite food?", "What"),
+        ("___ is the weather like?", "How"),
+        ("___ are you sad?", "Why"),
+        ("___ is the cat?", "Where"),
+    ],
+    "intermediate": [
+        ("___ do you eat for lunch?", "What"),
+        ("___ subject do you prefer, maths or English?", "Which"),
+        ("___ does the lesson start?", "When"),
+        ("___ many books are in your bag?", "How"),
+        ("___ are you laughing?", "Why"),
+        ("___ team do you support?", "Which"),
+        ("___ wins the race?", "Who"),
+        ("___ are you doing this evening?", "What"),
+        ("___ do you take the bus?", "When"),
+        ("___ much sugar do you want?", "How"),
+    ],
+    "advanced": [
+        ("___ do you usually wake up on Saturdays?", "When"),
+        ("___ would you like to visit, London or New York?", "Which"),
+        ("___ on earth did you do that?", "Why"),
+        ("___ can I help you with today?", "How"),
+        ("___ are you waiting for at the station?", "Who"),
+        ("___ have you been since last summer?", "Where"),
+    ],
+}
+
+INTERROGATIVE_TRANSLATIONS: Dict[str, List[Tuple[str, str]]] = {
+    # Pairs (anglais, français) — utilisées dans les 2 directions.
+    "beginner": [
+        ("What is your name?", "Quel est ton nom ?"),
+        ("Where do you live?", "Où habites-tu ?"),
+        ("When is your birthday?", "Quand est ton anniversaire ?"),
+        ("Who is your best friend?", "Qui est ton meilleur ami ?"),
+        ("How are you?", "Comment vas-tu ?"),
+        ("Why are you happy?", "Pourquoi es-tu content ?"),
+        ("How old are you?", "Quel âge as-tu ?"),
+        ("What is your favourite colour?", "Quelle est ta couleur préférée ?"),
+        ("Where is the cat?", "Où est le chat ?"),
+        ("Who is your teacher?", "Qui est ton professeur ?"),
+    ],
+    "intermediate": [
+        ("What do you eat for lunch?", "Qu'est-ce que tu manges pour le déjeuner ?"),
+        ("When does school start?", "Quand commence l'école ?"),
+        ("Why do you like English?", "Pourquoi aimes-tu l'anglais ?"),
+        ("How many sisters do you have?", "Combien de sœurs as-tu ?"),
+        ("Which colour do you prefer?", "Quelle couleur préfères-tu ?"),
+        ("Where do you go on holiday?", "Où vas-tu en vacances ?"),
+        ("Who cooks dinner in your family?", "Qui prépare le dîner chez toi ?"),
+    ],
+    "advanced": [
+        ("How often do you go to the cinema?", "À quelle fréquence vas-tu au cinéma ?"),
+        ("Which of these books did you enjoy the most?", "Lequel de ces livres as-tu préféré ?"),
+        ("Where would you like to live in the future?", "Où aimerais-tu vivre plus tard ?"),
+    ],
+}
+
+# --- Vocabulaire alimentation (PDF "Alimentation 6e") --------------------
+
+FOOD_VOCAB: Dict[str, Dict[str, str]] = {
+    "beginner": {
+        "une pomme": "apple",
+        "une banane": "banana",
+        "du pain": "bread",
+        "du fromage": "cheese",
+        "de l'eau": "water",
+        "du lait": "milk",
+        "du jus de fruit": "fruit juice",
+        "un œuf": "egg",
+        "du riz": "rice",
+        "un sandwich": "sandwich",
+        "une pizza": "pizza",
+        "une orange": "orange",
+        "du chocolat": "chocolate",
+        "du beurre": "butter",
+        "du sucre": "sugar",
+        "du poulet": "chicken",
+    },
+    "intermediate": {
+        "une fraise": "strawberry",
+        "une glace": "ice cream",
+        "un petit-déjeuner": "breakfast",
+        "du jambon": "ham",
+        "un soda": "soda",
+        "du miel": "honey",
+        "des carottes": "carrots",
+        "du café": "coffee",
+        "une tomate": "tomato",
+        "une salade": "salad",
+        "une soupe": "soup",
+        "des pâtes": "pasta",
+        "du yaourt": "yogurt",
+        "une crêpe": "pancake",
+        "de la confiture": "jam",
+        "du poisson": "fish",
+        "une poire": "pear",
+    },
+    "advanced": {
+        "des framboises": "raspberries",
+        "un ananas": "pineapple",
+        "des champignons": "mushrooms",
+        "du saumon": "salmon",
+        "des frites": "chips",
+        "un dessert": "dessert",
+        "du raisin": "grapes",
+        "une noisette": "hazelnut",
+    },
+}
+
+# --- Vocabulaire corps -----------------------------------------------------
+
+BODY_VOCAB: Dict[str, Dict[str, str]] = {
+    "beginner": {
+        "la tête": "head",
+        "la main": "hand",
+        "le pied": "foot",
+        "l'œil": "eye",
+        "l'oreille": "ear",
+        "le nez": "nose",
+        "la bouche": "mouth",
+        "le bras": "arm",
+        "la jambe": "leg",
+        "les cheveux": "hair",
+        "le doigt": "finger",
+        "les dents": "teeth",
+    },
+    "intermediate": {
+        "l'épaule": "shoulder",
+        "le coude": "elbow",
+        "le genou": "knee",
+        "la cheville": "ankle",
+        "le poignet": "wrist",
+        "le dos": "back",
+        "le ventre": "stomach",
+        "le cou": "neck",
+    },
+    "advanced": {
+        "le menton": "chin",
+        "le sourcil": "eyebrow",
+        "la mâchoire": "jaw",
+        "le talon": "heel",
+    },
+}
+
+# --- Vocabulaire vêtements -------------------------------------------------
+
+CLOTHES_VOCAB: Dict[str, Dict[str, str]] = {
+    "beginner": {
+        "un t-shirt": "t-shirt",
+        "un pantalon": "trousers",
+        "une jupe": "skirt",
+        "une robe": "dress",
+        "un manteau": "coat",
+        "un pull": "jumper",
+        "des chaussures": "shoes",
+        "une chaussette": "sock",
+        "un chapeau": "hat",
+        "une casquette": "cap",
+        "une écharpe": "scarf",
+        "des gants": "gloves",
+    },
+    "intermediate": {
+        "une veste": "jacket",
+        "un short": "shorts",
+        "des baskets": "trainers",
+        "une ceinture": "belt",
+        "une chemise": "shirt",
+        "un sweat à capuche": "hoodie",
+        "un maillot de bain": "swimsuit",
+        "des bottes": "boots",
+    },
+    "advanced": {
+        "un costume": "suit",
+        "un imperméable": "raincoat",
+        "des sandales": "sandals",
+        "un nœud papillon": "bow tie",
+    },
+}
+
+# --- Vocabulaire météo -----------------------------------------------------
+
+WEATHER_VOCAB: Dict[str, Dict[str, str]] = {
+    "beginner": {
+        "ensoleillé": "sunny",
+        "pluvieux": "rainy",
+        "nuageux": "cloudy",
+        "venteux": "windy",
+        "neigeux": "snowy",
+        "chaud": "hot",
+        "froid": "cold",
+        "le soleil": "sun",
+        "la pluie": "rain",
+        "la neige": "snow",
+        "le vent": "wind",
+    },
+    "intermediate": {
+        "orageux": "stormy",
+        "brumeux": "foggy",
+        "humide": "humid",
+        "frais": "cool",
+        "doux": "mild",
+        "un nuage": "cloud",
+        "un orage": "thunderstorm",
+        "un éclair": "lightning",
+    },
+    "advanced": {
+        "verglacé": "icy",
+        "bruineux": "drizzly",
+        "une rafale": "gust",
+        "une averse": "shower",
+    },
+}
+
+# --- Phrases à transformer en 3e personne (PDF Daily Routine, Ex.6) -------
+
+# Format: (verbe_base, complément SANS PONCTUATION FINALE). Le générateur
+# reconstitue "I {verbe} {complément}." pour l'énoncé et conjugue à la 3e
+# personne pour la réponse, en piochant un prénom dans THIRD_PERSON_PEOPLE
+# et en remplaçant "my" par "his/her" selon le genre.
+THIRD_PERSON_SENTENCES: Dict[str, List[Tuple[str, str]]] = {
+    "beginner": [
+        ("wake up", "at 7"),
+        ("have", "breakfast at 7:30"),
+        ("go", "to school by bus"),
+        ("watch", "TV in the evening"),
+        ("brush", "my teeth after dinner"),
+        ("play", "football after school"),
+        ("do", "my homework at 5pm"),
+        ("read", "a book before bed"),
+        ("wash", "my hands"),
+        ("finish", "school at 4"),
+    ],
+    "intermediate": [
+        ("study", "English at school"),
+        ("listen", "to music every day"),
+        ("ride", "my bike on Sundays"),
+        ("eat", "lunch at the canteen"),
+        ("walk", "to the park"),
+        ("write", "a letter to my friend"),
+    ],
+    "advanced": [
+        ("organise", "a party for my birthday"),
+        ("practise", "the piano twice a week"),
+        ("travel", "to England every summer"),
+    ],
+}
+
+# (prénom, possessif_3e_personne)
+THIRD_PERSON_PEOPLE: Tuple[Tuple[str, str], ...] = (
+    ("Tom", "his"),
+    ("Emma", "her"),
+    ("Lucas", "his"),
+    ("Mia", "her"),
+    ("Léa", "her"),
+    ("Noah", "his"),
+)
+
 
 def normalize_difficulty(raw_value: Optional[str]) -> str:
     if not raw_value:
@@ -680,6 +957,112 @@ def _generate_adjective_opposite(difficulty: str) -> ExercisePrompt:
     )
 
 
+def _generate_interrogative_completion(difficulty: str) -> ExercisePrompt:
+    """QCM : choisir le bon mot interrogatif pour compléter la phrase."""
+    pool = _pooled_list(INTERROGATIVE_COMPLETIONS, difficulty)
+    sentence, answer = random.choice(pool)
+    distractors = [w for w in INTERROGATIVE_WORDS if w != answer]
+    options = random.sample(distractors, k=4) + [answer]
+    random.shuffle(options)
+    return ExercisePrompt(
+        prompt=f"Complète avec le bon mot interrogatif : {sentence}",
+        answer=answer,
+        category="interrogative_words",
+        question_type="mcq",
+        options=tuple(options),
+    )
+
+
+def _generate_interrogative_translation(difficulty: str) -> ExercisePrompt:
+    """Traduction d'une question dans un sens ou l'autre, au hasard."""
+    pool = _pooled_list(INTERROGATIVE_TRANSLATIONS, difficulty)
+    english, french = random.choice(pool)
+    if random.random() < 0.5:
+        return ExercisePrompt(
+            prompt=f"Traduis en anglais : « {french} »",
+            answer=english,
+            category="interrogative_words",
+        )
+    return ExercisePrompt(
+        prompt=f"Traduis en français : « {english} »",
+        answer=french,
+        category="interrogative_words",
+    )
+
+
+def _bidirectional_vocab_exercise(
+    pool: Dict[str, str], category: str, theme_label_fr: str
+) -> ExercisePrompt:
+    """Helper : tire une paire FR/EN, choisit la direction au hasard."""
+    french, english = random.choice(list(pool.items()))
+    if random.random() < 0.5:
+        return ExercisePrompt(
+            prompt=f"Traduis en anglais ({theme_label_fr}) : « {french} »",
+            answer=english,
+            category=category,
+        )
+    return ExercisePrompt(
+        prompt=f"Traduis en français ({theme_label_fr}) : « {english} »",
+        answer=french,
+        category=category,
+    )
+
+
+def _generate_food_vocabulary(difficulty: str) -> ExercisePrompt:
+    return _bidirectional_vocab_exercise(
+        _pooled_dict(FOOD_VOCAB, difficulty), "food_vocab", "alimentation"
+    )
+
+
+def _generate_body_vocabulary(difficulty: str) -> ExercisePrompt:
+    return _bidirectional_vocab_exercise(
+        _pooled_dict(BODY_VOCAB, difficulty), "body_vocab", "corps"
+    )
+
+
+def _generate_clothes_vocabulary(difficulty: str) -> ExercisePrompt:
+    return _bidirectional_vocab_exercise(
+        _pooled_dict(CLOTHES_VOCAB, difficulty), "clothes_vocab", "vêtements"
+    )
+
+
+def _generate_weather_vocabulary(difficulty: str) -> ExercisePrompt:
+    return _bidirectional_vocab_exercise(
+        _pooled_dict(WEATHER_VOCAB, difficulty), "weather_vocab", "météo"
+    )
+
+
+def _generate_third_person_s(difficulty: str) -> ExercisePrompt:
+    """Réécrit une phrase en « I … » à la 3e personne du singulier.
+
+    Ex : ``I wake up at 7`` ➜ ``Tom wakes up at 7.`` Couvre les cas
+    spéciaux (go→goes, watch→watches, have→has, do→does, brush→brushes…)
+    et remplace ``my`` par ``his``/``her`` selon le prénom.
+    """
+    pool = _pooled_list(THIRD_PERSON_SENTENCES, difficulty)
+    base_verb, rest = random.choice(pool)
+    name, possessive = random.choice(THIRD_PERSON_PEOPLE)
+    # Verbe à particule (« wake up », « get up ») : on conjugue le 1er mot.
+    head, _, particle = base_verb.partition(" ")
+    if head == "have":
+        head_conj = "has"
+    else:
+        head_conj = _conjugate_present_simple(name, head)
+    conjugated = f"{head_conj} {particle}".strip()
+    rest_third = " ".join(possessive if word == "my" else word for word in rest.split())
+    if rest:
+        original = f"I {base_verb} {rest}."
+        rewritten = f"{name} {conjugated} {rest_third}."
+    else:
+        original = f"I {base_verb}."
+        rewritten = f"{name} {conjugated}."
+    return ExercisePrompt(
+        prompt=f"Réécris cette phrase avec « {name} » : {original}",
+        answer=rewritten,
+        category="grammar_third_person_s",
+    )
+
+
 GENERATOR_REGISTRY: List[GeneratorSpec] = [
     GeneratorSpec(("beginner", "intermediate", "advanced"), "number_word", _generate_number_word_exercise),
     GeneratorSpec(("beginner", "intermediate", "advanced"), "word_number", _generate_word_number_exercise),
@@ -697,6 +1080,13 @@ GENERATOR_REGISTRY: List[GeneratorSpec] = [
     GeneratorSpec(("beginner", "intermediate", "advanced"), "grammar_pronouns", _generate_pronoun_exercise),
     GeneratorSpec(("intermediate", "advanced"), "culture_countries", _generate_culture_item),
     GeneratorSpec(("intermediate", "advanced"), "adjectives_opposites", _generate_adjective_opposite),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "interrogative_words", _generate_interrogative_completion),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "interrogative_words", _generate_interrogative_translation),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "food_vocab", _generate_food_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "body_vocab", _generate_body_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "clothes_vocab", _generate_clothes_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "weather_vocab", _generate_weather_vocabulary),
+    GeneratorSpec(("beginner", "intermediate", "advanced"), "grammar_third_person_s", _generate_third_person_s),
 ]
 
 AVAILABLE_CATEGORIES: Tuple[str, ...] = tuple(sorted({spec.category for spec in GENERATOR_REGISTRY}))
