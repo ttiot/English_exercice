@@ -23,6 +23,12 @@ services:
     environment:
       - FLASK_ENV=production
       - DATABASE_URL=sqlite:////data/app.db   # si tu l’utilises dans ton code
+      - SECRET_KEY=${SECRET_KEY}
+      - DEFAULT_ADMIN_PASSWORD=${DEFAULT_ADMIN_PASSWORD}
+      - FERNET_KEY=${FERNET_KEY}              # base64 Fernet key, cf. CLAUDE.md
+      - OPENAI_API_KEY=${OPENAI_API_KEY:-}    # fallback si aucun OpenAIConfig actif
+      - OPENAI_MODEL=${OPENAI_MODEL:-gpt-4o-mini}
+      - OPENAI_BASE_URL=${OPENAI_BASE_URL:-https://api.openai.com/v1}
     volumes:
       - app_data:/data
     networks: [web]

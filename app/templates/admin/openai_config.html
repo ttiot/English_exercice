@@ -1,0 +1,95 @@
+{% extends 'base.html' %}
+{% block title %}Configuration OpenAI{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Configuration OpenAI</h2>
+    <p class="muted">
+      La clé API est chiffrée avec Fernet (cf. <code>FERNET_KEY</code>) avant
+      stockage. Champ vide ⇒ la clé existante est conservée.
+    </p>
+
+    {% if test_result %}
+      <div class="alert alert-{{ 'success' if test_result.success else 'danger' }}">
+        {% if test_result.success %}
+          Connexion OK (source : <strong>{{ test_result.source }}</strong>).
+          Modèles disponibles (max 10) :
+          {{ test_result.available_models | join(', ') }}
+        {% else %}
+          Échec : {{ test_result.error }}
+        {% endif %}
+      </div>
+    {% endif %}
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <label>Clé API OpenAI {% if config.api_key_encrypted %}<em>(une clé est déjà enregistrée)</em>{% endif %}</label>
+      <input
+        type="password"
+        name="api_key"
+        autocomplete="off"
+        placeholder="sk-... (laisser vide pour conserver la clé actuelle)"
+      />
+
+      <label>Base URL</label>
+      <input
+        type="text"
+        name="base_url"
+        value="{{ config.base_url or 'https://api.openai.com/v1' }}"
+      />
+
+      <label>Modèle par défaut</label>
+      <select name="default_model">
+        {% for model in model_choices %}
+          <option value="{{ model }}" {% if config.default_model == model %}selected{% endif %}>
+            {{ model }}
+          </option>
+        {% endfor %}
+      </select>
+
+      <label>Nom de la source (affiché si besoin)</label>
+      <input type="text" name="source_name" value="{{ config.source_name or 'OpenAI' }}" />
+
+      <label>Budget mensuel (USD, vide = pas de plafond)</label>
+      <input
+        type="number"
+        step="0.01"
+        min="0"
+        name="monthly_budget"
+        value="{{ config.monthly_budget_usd if config.monthly_budget_usd else '' }}"
+      />
+
+      <label class="checkbox">
+        <input type="checkbox" name="is_active" {% if config.is_active %}checked{% endif %} />
+        Activer cette configuration (sinon le service IA retombe sur les variables d'environnement)
+      </label>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit" name="action" value="save">
+          Enregistrer
+        </button>
+        <button class="btn btn-secondary" type="submit" name="action" value="test">
+          Tester la connexion
+        </button>
+        {% if config.api_key_encrypted %}
+          <button
+            class="btn btn-danger"
+            type="submit"
+            name="action"
+            value="clear"
+            onclick="return confirm('Supprimer la clé API stockée ?');"
+          >
+            Supprimer la clé
+          </button>
+        {% endif %}
+      </div>
+    </form>
+
+    <p class="muted" style="margin-top: 1.5rem;">
+      <a href="{{ url_for('main.admin_openai_hub') }}">← Administration IA</a> ·
+      <a href="{{ url_for('main.admin_openai_logs') }}">Logs</a> ·
+      <a href="{{ url_for('main.admin_openai_budget') }}">Budget</a> ·
+      <a href="{{ url_for('main.admin_openai_statistics') }}">Statistiques</a>
+    </p>
+  </div>
+{% endblock %}

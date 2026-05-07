@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% block title %}Pool d'exercices IA{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Pool d'exercices générés par l'IA</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.exercise_bank') }}">← Banque d'exercices</a>
+    </p>
+    <p class="muted">
+      Chaque exercice IA est conservé après sa première utilisation et peut
+      être désactivé pour ne plus apparaître dans les sessions futures (les
+      sessions historiques gardent leur copie).
+    </p>
+
+    <form method="get" class="inline-form">
+      <label class="checkbox-inline">
+        <input type="checkbox" name="disabled" value="1" {% if show_disabled %}checked{% endif %} />
+        Inclure les exercices désactivés
+      </label>
+      <button class="btn btn-secondary" type="submit">Filtrer</button>
+    </form>
+
+    <p class="muted">{{ total }} exercice(s) — page {{ page }}</p>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date (UTC)</th>
+          <th>Élève d'origine</th>
+          <th>Prompt élève</th>
+          <th>Énoncé</th>
+          <th>Réponse</th>
+          <th>Catégorie</th>
+          <th>Type</th>
+          <th>Difficulté</th>
+          <th>Réutilisé</th>
+          <th>État</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for item in items %}
+          <tr class="{% if item.is_disabled %}row-muted{% endif %}">
+            <td>{{ item.created_at.strftime('%Y-%m-%d %H:%M') }}</td>
+            <td>
+              {% if item.student_id and student_lookup.get(item.student_id) %}
+                {{ student_lookup[item.student_id].full_name() }}
+              {% else %}—{% endif %}
+            </td>
+            <td>{{ item.student_prompt | truncate(80) }}</td>
+            <td>{{ item.prompt | truncate(120) }}</td>
+            <td><code>{{ item.answer }}</code></td>
+            <td>{{ item.category_code }}</td>
+            <td>{{ item.question_type }}</td>
+            <td>{{ item.difficulty }}</td>
+            <td>{{ item.times_used or 0 }}</td>
+            <td>
+              {% if item.is_disabled %}
+                <span class="badge badge-warning">désactivé</span>
+              {% else %}
+                <span class="badge badge-success">actif</span>
+              {% endif %}
+            </td>
+            <td>
+              <form method="post" action="{{ url_for('main.toggle_ai_exercise', item_id=item.id) }}" class="inline-form-compact">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button class="btn btn-secondary" type="submit">
+                  {% if item.is_disabled %}Réactiver{% else %}Désactiver{% endif %}
+                </button>
+              </form>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="11" class="muted">Aucun exercice IA pour l'instant.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if total > per_page %}
+      <div class="actions">
+        {% if page > 1 %}
+          <a class="btn btn-secondary" href="?page={{ page - 1 }}{% if show_disabled %}&disabled=1{% endif %}">← Précédent</a>
+        {% endif %}
+        {% if page * per_page < total %}
+          <a class="btn btn-secondary" href="?page={{ page + 1 }}{% if show_disabled %}&disabled=1{% endif %}">Suivant →</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

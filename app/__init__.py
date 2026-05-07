@@ -62,6 +62,7 @@ def create_app():
         ensure_default_badges,
         ensure_default_categories,
         ensure_default_prerequisites,
+        ensure_default_prompts,
         ensure_admin_account,
         ensure_schema_migrations,
     )
@@ -110,6 +111,7 @@ def create_app():
                 ensure_default_categories()
                 ensure_default_badges()
                 ensure_default_prerequisites()
+                ensure_default_prompts()
                 ensure_admin_account(Config.DEFAULT_ADMIN_EMAIL, Config.DEFAULT_ADMIN_PASSWORD)
 
         except Exception as e:

@@ -14,6 +14,18 @@ class Config:
         else:
             raise ValueError("SECRET_KEY doit être défini en production")
 
+    # Clé Fernet pour chiffrer la clé API OpenAI stockée en BDD.
+    # En dev, on auto-génère une clé éphémère (toute clé OpenAI saisie
+    # devient illisible au prochain démarrage, ce qui est acceptable en dev).
+    FERNET_KEY = os.environ.get("FERNET_KEY")
+    if not FERNET_KEY:
+        if FLASK_ENV == "development":
+            from cryptography.fernet import Fernet
+
+            FERNET_KEY = Fernet.generate_key().decode()
+        else:
+            raise ValueError("FERNET_KEY doit être défini en production")
+
     # --- Dossiers ---
     # Dans un conteneur, on stocke la DB et les uploads dans /data (volume)
     DATA_DIR = Path(os.environ.get("DATA_DIR", "/data")).resolve()
@@ -66,3 +78,9 @@ class Config:
         "UPLOAD_FOLDER", str((DATA_DIR / "uploads").resolve())
     )
     ALLOWED_IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "gif"}
+
+    # OpenAI : valeurs de repli si aucun OpenAIConfig actif en BDD.
+    # La page admin /admin/openai/config est la voie nominale.
+    OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
+    OPENAI_MODEL = os.environ.get("OPENAI_MODEL", "gpt-4o-mini")
+    OPENAI_BASE_URL = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")

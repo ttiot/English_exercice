@@ -9,6 +9,7 @@ from uuid import uuid4
 from urllib.parse import urlparse, urljoin
 
 import csv
+import json
 import re
 
 from flask import (
@@ -50,7 +51,11 @@ from .exercise_factory import (
     AVAILABLE_CATEGORIES,
 )
 from .models import (
+    AICallLog,
+    AIGeneratedExercise,
     Badge,
+    OpenAIConfig,
+    OpenAIPrompt,
     PracticeSession,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
@@ -93,6 +98,7 @@ SESSION_TYPE_LABELS = {
     "challenge": "Défi",
     "control": "Contrôle",
     "prepared": "Parcours préparé",
+    "ai_custom": "Prompt libre (IA)",
 }
 
 
@@ -463,31 +469,85 @@ def _prompt_has_blank(prompt: str) -> bool:
     return bool(re.search(r"_{3,}|\\.{3,}|…", prompt))
 
 
-def _is_answer_correct(exercise: SessionExercise) -> bool:
-    base_answer = exercise.correct_answer or ""
-    user_answer = exercise.student_answer or ""
-    strict_expected = _normalize_answer(base_answer, loose=False)
-    strict_actual = _normalize_answer(user_answer, loose=False)
+def _accepted_answers(exercise: SessionExercise) -> List[str]:
+    """Liste des réponses acceptées : `correct_answer` + variantes JSON."""
+    answers: List[str] = []
+    if exercise.correct_answer:
+        answers.append(exercise.correct_answer)
+    raw = getattr(exercise, "accepted_answers_json", None)
+    if raw:
+        try:
+            extra = json.loads(raw)
+            if isinstance(extra, list):
+                answers.extend(str(item) for item in extra if item)
+        except (ValueError, TypeError):
+            pass
+    return answers
 
-    if strict_expected == strict_actual:
-        return True
+
+def _is_answer_correct(exercise: SessionExercise) -> bool:
+    user_answer = exercise.student_answer or ""
+    candidates = _accepted_answers(exercise)
+    if not candidates:
+        return False
+
+    strict_actual = _normalize_answer(user_answer, loose=False)
+    question_type = getattr(exercise, "question_type", "text") or "text"
+
+    # QCM : l'élève a cliqué un bouton, on exige le match exact (case/espaces).
+    if question_type == "mcq":
+        return any(
+            strict_actual == _normalize_answer(answer, loose=False)
+            for answer in candidates
+        )
 
     translation_categories = {
         "translate_en_fr",
         "translate_fr_en",
         "sentence_en_fr",
         "sentence_fr_en",
+        "interrogative_words",
     }
-    if exercise.category in translation_categories:
-        loose_expected = _normalize_answer(base_answer, loose=True)
-        loose_actual = _normalize_answer(user_answer, loose=True)
-        return loose_expected == loose_actual
+    loose_eligible = exercise.category in translation_categories
+    loose_actual = _normalize_answer(user_answer, loose=True) if loose_eligible else None
 
-    if _prompt_has_blank(exercise.prompt):
-        pattern = rf"\b{re.escape(strict_expected)}\b"
-        if re.search(pattern, strict_actual):
+    has_blank = _prompt_has_blank(exercise.prompt)
+
+    for answer in candidates:
+        strict_expected = _normalize_answer(answer, loose=False)
+        if strict_expected == strict_actual:
             return True
+        if loose_eligible:
+            if _normalize_answer(answer, loose=True) == loose_actual:
+                return True
+        if has_blank:
+            pattern = rf"\b{re.escape(strict_expected)}\b"
+            if re.search(pattern, strict_actual):
+                return True
     return False
+
+
+def _session_exercise_kwargs(
+    prompt: ExercisePrompt,
+    *,
+    source: str = "procedural",
+    ai_exercise_id: Optional[int] = None,
+) -> dict:
+    """Convertit un ``ExercisePrompt`` en kwargs pour ``SessionExercise(...)``."""
+    return {
+        "prompt": prompt.prompt,
+        "correct_answer": prompt.answer,
+        "category": prompt.category,
+        "question_type": prompt.question_type,
+        "options_json": json.dumps(list(prompt.options)) if prompt.options else None,
+        "accepted_answers_json": (
+            json.dumps(list(prompt.accepted_answers))
+            if prompt.accepted_answers
+            else None
+        ),
+        "source": source,
+        "ai_exercise_id": ai_exercise_id,
+    }
 
 
 def _quarter_range(year: int, quarter: int) -> Tuple[date, date]:
@@ -1331,6 +1391,82 @@ def start_session(student_id: int):
             session_type = "control"
             if not time_limit_value:
                 time_limit_value = 20
+        elif session_mode == "ai_custom":
+            session_type = "ai_custom"
+
+        # Mode IA : on bypasse les parcours préparés / procéduraux.
+        if session_type == "ai_custom":
+            from .services.ai_generator import (
+                generate_exercises as ai_generate_exercises,
+                get_openai_client,
+                is_budget_exceeded,
+            )
+
+            student_prompt = sanitize_text_input(request.form.get("student_prompt", ""))
+            if not student_prompt or len(student_prompt) < 5:
+                flash(
+                    "Décris en quelques mots le sujet sur lequel tu veux travailler "
+                    "(au moins 5 caractères).",
+                    "warning",
+                )
+                return redirect(url_for("main.start_session", student_id=student.id))
+            if len(student_prompt) > 500:
+                student_prompt = student_prompt[:500]
+
+            client, _ = get_openai_client()
+            if not client:
+                flash(
+                    "OpenAI n'est pas configuré. Demande à l'administrateur "
+                    "d'activer le service IA.",
+                    "danger",
+                )
+                return redirect(url_for("main.start_session", student_id=student.id))
+            if is_budget_exceeded():
+                flash(
+                    "Le budget mensuel IA est atteint. Réessaie le mois prochain "
+                    "ou demande à l'administrateur d'augmenter le plafond.",
+                    "warning",
+                )
+                return redirect(url_for("main.start_session", student_id=student.id))
+
+            ai_pairs = ai_generate_exercises(
+                student_prompt=student_prompt,
+                count=question_count,
+                difficulty=difficulty_value,
+                student_id=student.id,
+            )
+            if not ai_pairs:
+                flash(
+                    "Désolé, l'IA n'a pas pu générer d'exercices pour ce thème. "
+                    "Reformule ou réessaie plus tard.",
+                    "danger",
+                )
+                return redirect(url_for("main.start_session", student_id=student.id))
+
+            session_obj = PracticeSession(
+                student_id=student.id,
+                time_limit_minutes=time_limit_value,
+                time_limit_seconds=(time_limit_value * 60) if time_limit_value else None,
+                total_questions=len(ai_pairs),
+                difficulty=difficulty_value,
+                session_type="ai_custom",
+                instructions_fr=student_prompt,
+            )
+            db.session.add(session_obj)
+            db.session.flush()
+            for index, (exercise, pool_row) in enumerate(ai_pairs):
+                db.session.add(
+                    SessionExercise(
+                        session_id=session_obj.id,
+                        display_order=index,
+                        **_session_exercise_kwargs(
+                            exercise, source="ai", ai_exercise_id=pool_row.id
+                        ),
+                    )
+                )
+                pool_row.times_used = (pool_row.times_used or 0) + 1
+            db.session.commit()
+            return redirect(url_for("main.play_session", session_id=session_obj.id))
 
         session_obj = PracticeSession(
             student_id=student.id,
@@ -1374,6 +1510,7 @@ def start_session(student_id: int):
                         correct_answer=question.answer,
                         category=question.category_code,
                         display_order=index,
+                        source="prepared",
                     )
                 )
             session_obj.total_questions = len(prepared_set.questions)
@@ -1420,10 +1557,8 @@ def start_session(student_id: int):
                 db.session.add(
                     SessionExercise(
                         session_id=session_obj.id,
-                        prompt=exercise.prompt,
-                        correct_answer=exercise.answer,
-                        category=exercise.category,
                         display_order=index,
+                        **_session_exercise_kwargs(exercise, source="procedural"),
                     )
                 )
             session_obj.total_questions = len(exercises)
@@ -2050,6 +2185,54 @@ def add_exercise_item():
     return redirect(url_for("main.exercise_bank"))
 
 
+@bp.route("/exercise-bank/ai")
+@_parent_required
+def ai_exercise_pool():
+    from sqlalchemy import desc
+
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = 25
+    show_disabled = request.args.get("disabled") == "1"
+
+    query = AIGeneratedExercise.query
+    if not show_disabled:
+        query = query.filter(AIGeneratedExercise.is_disabled.is_(False))
+    query = query.order_by(desc(AIGeneratedExercise.created_at))
+
+    total = query.count()
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    student_lookup = {
+        s.id: s
+        for s in Student.query.filter(
+            Student.id.in_({i.student_id for i in items if i.student_id})
+        ).all()
+    }
+
+    return render_template(
+        "ai_pool.html",
+        items=items,
+        student_lookup=student_lookup,
+        page=page,
+        per_page=per_page,
+        total=total,
+        show_disabled=show_disabled,
+    )
+
+
+@bp.route("/exercise-bank/ai/<int:item_id>/toggle", methods=["POST"])
+@_parent_required
+def toggle_ai_exercise(item_id: int):
+    item = AIGeneratedExercise.query.get_or_404(item_id)
+    item.is_disabled = not item.is_disabled
+    db.session.commit()
+    flash(
+        "Exercice IA désactivé." if item.is_disabled else "Exercice IA réactivé.",
+        "info",
+    )
+    return redirect(url_for("main.ai_exercise_pool"))
+
+
 @bp.route("/exercise-bank/items/<int:item_id>/delete", methods=["POST"])
 @_parent_required
 def delete_exercise_item(item_id: int):
@@ -2176,3 +2359,306 @@ def update_user_role(user_id: int):
     db.session.commit()
     flash("Rôle utilisateur mis à jour.", "success")
     return redirect(url_for("main.parent_dashboard"))
+
+
+# --- Admin OpenAI ----------------------------------------------------------
+
+OPENAI_MODEL_CHOICES = (
+    "gpt-4o-mini",
+    "gpt-4o",
+    "gpt-4-turbo",
+    "gpt-4",
+    "gpt-3.5-turbo",
+    "gpt-5-mini",
+    "gpt-5",
+    "o1-mini",
+    "o1",
+)
+
+
+@bp.route("/admin/openai/config", methods=["GET", "POST"])
+@_admin_required
+def admin_openai_config():
+    config = OpenAIConfig.get_or_create()
+    test_result = None
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+
+        if action == "test":
+            from .services.ai_generator import test_connection
+
+            test_result = test_connection()
+            if test_result.get("success"):
+                flash(
+                    "Connexion OpenAI OK. Modèle par défaut : "
+                    f"{test_result.get('default_model')}",
+                    "success",
+                )
+            else:
+                flash(
+                    f"Échec du test : {test_result.get('error', 'erreur inconnue')}",
+                    "danger",
+                )
+        elif action == "clear":
+            config.set_api_key(None)
+            db.session.commit()
+            flash("Clé API supprimée.", "info")
+            return redirect(url_for("main.admin_openai_config"))
+        else:  # save
+            api_key = request.form.get("api_key", "").strip()
+            base_url = request.form.get("base_url", "").strip() or None
+            default_model = request.form.get("default_model", "").strip() or None
+            source_name = request.form.get("source_name", "").strip() or None
+            monthly_budget = request.form.get("monthly_budget", "").strip()
+            is_active = bool(request.form.get("is_active"))
+
+            if api_key:
+                config.set_api_key(api_key)
+            config.base_url = base_url or "https://api.openai.com/v1"
+            config.default_model = default_model or "gpt-4o-mini"
+            config.source_name = source_name or "OpenAI"
+            config.is_active = is_active
+            if monthly_budget:
+                try:
+                    config.monthly_budget_usd = float(monthly_budget)
+                except ValueError:
+                    flash("Budget mensuel invalide.", "warning")
+                    config.monthly_budget_usd = None
+            else:
+                config.monthly_budget_usd = None
+
+            db.session.commit()
+            flash("Configuration OpenAI enregistrée.", "success")
+            return redirect(url_for("main.admin_openai_config"))
+
+    return render_template(
+        "admin/openai_config.html",
+        config=config,
+        model_choices=OPENAI_MODEL_CHOICES,
+        test_result=test_result,
+    )
+
+
+@bp.route("/admin/openai/logs")
+@_admin_required
+def admin_openai_logs():
+    from sqlalchemy import desc
+
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = 25
+    status = request.args.get("status", "").strip()
+    call_type = request.args.get("call_type", "").strip()
+
+    query = AICallLog.query
+    if status:
+        query = query.filter(AICallLog.response_status == status)
+    if call_type:
+        query = query.filter(AICallLog.call_type == call_type)
+    query = query.order_by(desc(AICallLog.created_at))
+
+    total = query.count()
+    logs = query.offset((page - 1) * per_page).limit(per_page).all()
+    student_lookup = {
+        student.id: student
+        for student in Student.query.filter(
+            Student.id.in_({log.student_id for log in logs if log.student_id})
+        ).all()
+    }
+
+    return render_template(
+        "admin/openai_logs.html",
+        logs=logs,
+        student_lookup=student_lookup,
+        page=page,
+        per_page=per_page,
+        total=total,
+        status=status,
+        call_type=call_type,
+    )
+
+
+@bp.route("/admin/openai/logs/<int:log_id>")
+@_admin_required
+def admin_openai_log_detail(log_id: int):
+    log = AICallLog.query.get_or_404(log_id)
+    student = Student.query.get(log.student_id) if log.student_id else None
+    return render_template(
+        "admin/openai_log_detail.html",
+        log=log,
+        student=student,
+    )
+
+
+@bp.route("/admin/openai/budget")
+@_admin_required
+def admin_openai_budget():
+    config = OpenAIConfig.get_active()
+    today = datetime.utcnow()
+    months: List[dict] = []
+    for offset in range(0, 3):
+        # 3 derniers mois (incluant le courant).
+        year = today.year
+        month = today.month - offset
+        while month <= 0:
+            month += 12
+            year -= 1
+        months.append(AICallLog.get_monthly_stats(year=year, month=month))
+
+    current = months[0]
+    budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
+    spent = float(current.get("cost_usd") or 0.0)
+    ratio = (spent / budget * 100) if budget else None
+
+    return render_template(
+        "admin/openai_budget.html",
+        config=config,
+        months=months,
+        budget=budget,
+        spent=spent,
+        ratio=ratio,
+    )
+
+
+@bp.route("/admin/openai/")
+@_admin_required
+def admin_openai_hub():
+    """Page d'accueil du panneau d'administration OpenAI."""
+    config = OpenAIConfig.get_active()
+    current = AICallLog.get_monthly_stats()
+    success_stats = AICallLog.get_success_stats()
+    avg_latency = AICallLog.get_avg_latency_ms()
+    has_key = bool(config and config.get_api_key())
+    budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
+    spent = float(current.get("cost_usd") or 0.0)
+    budget_ratio = (spent / budget * 100) if budget else None
+
+    return render_template(
+        "admin/openai_hub.html",
+        config=config,
+        has_key=has_key,
+        current=current,
+        success_stats=success_stats,
+        avg_latency=avg_latency,
+        budget=budget,
+        spent=spent,
+        budget_ratio=budget_ratio,
+    )
+
+
+@bp.route("/admin/openai/prompts")
+@_admin_required
+def admin_openai_prompts():
+    """Liste des prompts éditables."""
+    from .services.ai_generator import _DEFAULT_PROMPTS
+
+    # On garantit que toutes les clés connues existent en BDD (pour l'affichage).
+    for key in _DEFAULT_PROMPTS:
+        OpenAIPrompt.get_or_create_default(key)
+
+    prompts = OpenAIPrompt.query.order_by(OpenAIPrompt.prompt_key.asc()).all()
+    return render_template(
+        "admin/openai_prompts.html",
+        prompts=prompts,
+        default_keys=set(_DEFAULT_PROMPTS.keys()),
+    )
+
+
+@bp.route("/admin/openai/prompts/<prompt_key>", methods=["GET", "POST"])
+@_admin_required
+def admin_openai_prompt_edit(prompt_key: str):
+    """Édition du prompt système / utilisateur / paramètres."""
+    prompt = OpenAIPrompt.get_or_create_default(prompt_key)
+    if not prompt:
+        abort(404)
+
+    if request.method == "POST":
+        display_name = sanitize_text_input(request.form.get("display_name", ""))
+        description = sanitize_text_input(request.form.get("description", ""))
+        # Pas de sanitize sur les prompts : on veut préserver le formatage
+        # (sauts de ligne, accolades de templating, etc.). On limite juste
+        # la longueur pour éviter une surcharge.
+        system_prompt = (request.form.get("system_prompt") or "")[:20000]
+        user_prompt_template = (request.form.get("user_prompt_template") or "")[:20000]
+        max_tokens_raw = request.form.get("max_output_tokens", "").strip()
+        is_active = bool(request.form.get("is_active"))
+
+        if not display_name:
+            flash("Le nom d'affichage est requis.", "warning")
+        elif not system_prompt or not user_prompt_template:
+            flash("Le prompt système et le prompt utilisateur sont requis.", "warning")
+        else:
+            prompt.display_name = display_name
+            prompt.description = description or None
+            prompt.system_prompt = system_prompt
+            prompt.user_prompt_template = user_prompt_template
+            prompt.is_active = is_active
+
+            params = prompt.get_parameters()
+            if max_tokens_raw:
+                try:
+                    params["max_output_tokens"] = max(64, min(int(max_tokens_raw), 16000))
+                except ValueError:
+                    flash("Nombre de tokens max invalide, ignoré.", "warning")
+            prompt.parameters_json = json.dumps(params) if params else None
+
+            db.session.commit()
+            flash("Prompt enregistré.", "success")
+            return redirect(url_for("main.admin_openai_prompt_edit", prompt_key=prompt_key))
+
+    from .services.ai_generator import _DEFAULT_PROMPTS
+
+    return render_template(
+        "admin/openai_prompt_edit.html",
+        prompt=prompt,
+        is_default_known=prompt_key in _DEFAULT_PROMPTS,
+        max_output_tokens=int(prompt.get_parameters().get("max_output_tokens") or 2000),
+        available_variables=prompt.get_available_variables(),
+    )
+
+
+@bp.route("/admin/openai/prompts/<prompt_key>/reset", methods=["POST"])
+@_admin_required
+def admin_openai_prompt_reset(prompt_key: str):
+    """Restaure les valeurs par défaut hardcodées pour ce prompt."""
+    prompt = OpenAIPrompt.query.filter_by(prompt_key=prompt_key).first()
+    if not prompt:
+        abort(404)
+    if prompt.reset_to_default():
+        db.session.commit()
+        flash("Prompt réinitialisé aux valeurs par défaut.", "success")
+    else:
+        flash("Aucune valeur par défaut connue pour cette clé.", "warning")
+    return redirect(url_for("main.admin_openai_prompt_edit", prompt_key=prompt_key))
+
+
+@bp.route("/admin/openai/statistics")
+@_admin_required
+def admin_openai_statistics():
+    """Tableau de bord d'usage OpenAI : trend annuel, top élèves, taux de succès."""
+    config = OpenAIConfig.get_active()
+    current = AICallLog.get_monthly_stats()
+    success_stats = AICallLog.get_success_stats()
+    avg_latency = AICallLog.get_avg_latency_ms()
+    trend = AICallLog.get_yearly_trend(months=12)
+    top_students = AICallLog.get_top_students(limit=10)
+
+    budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
+    spent = float(current.get("cost_usd") or 0.0)
+    budget_ratio = (spent / budget * 100) if budget else None
+
+    return render_template(
+        "admin/openai_statistics.html",
+        config=config,
+        current=current,
+        success_stats=success_stats,
+        avg_latency=avg_latency,
+        trend=trend,
+        trend_labels=[bucket["label"] for bucket in trend],
+        trend_calls=[bucket["calls"] for bucket in trend],
+        trend_costs=[round(bucket["cost_usd"], 4) for bucket in trend],
+        top_students=top_students,
+        budget=budget,
+        spent=spent,
+        budget_ratio=budget_ratio,
+    )

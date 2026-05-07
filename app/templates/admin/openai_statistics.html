@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+{% block title %}Statistiques OpenAI{% endblock %}
+{% block extra_head %}
+  <script src="{{ url_for('static', filename='js/vendor/chart.min.js') }}"></script>
+{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Statistiques OpenAI</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_hub') }}">← Administration OpenAI</a>
+    </p>
+
+    <h3>Mois courant</h3>
+    <div class="kpi-grid">
+      <div class="kpi-tile">
+        <span class="kpi-label">Appels</span>
+        <span class="kpi-value">{{ current.calls }}</span>
+        <span class="kpi-sub">
+          {% if success_stats.total %}
+            {{ success_stats.success }} OK · {{ success_stats.error }} erreurs
+          {% else %}
+            —
+          {% endif %}
+        </span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-label">Coût total</span>
+        <span class="kpi-value">{{ '%.4f'|format(current.cost_usd) }} USD</span>
+        <span class="kpi-sub">
+          {% if budget %}
+            sur {{ '%.2f'|format(budget) }} USD
+          {% else %}
+            Pas de budget défini
+          {% endif %}
+        </span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-label">Tokens</span>
+        <span class="kpi-value">{{ current.input_tokens + current.output_tokens }}</span>
+        <span class="kpi-sub">{{ current.input_tokens }} in · {{ current.output_tokens }} out</span>
+      </div>
+      <div class="kpi-tile">
+        <span class="kpi-label">Taux de succès</span>
+        <span class="kpi-value">
+          {% if success_stats.success_rate is not none %}
+            {{ '%.1f'|format(success_stats.success_rate) }}%
+          {% else %}
+            —
+          {% endif %}
+        </span>
+        <span class="kpi-sub">
+          Latence moy. :
+          {% if avg_latency %}{{ '%.0f'|format(avg_latency) }} ms{% else %}—{% endif %}
+        </span>
+      </div>
+    </div>
+
+    {% if budget %}
+      <h3>Consommation du plafond mensuel</h3>
+      <div class="progress-bar" aria-label="Consommation du budget">
+        <div
+          class="progress-bar-fill {% if budget_ratio and budget_ratio >= 90 %}progress-over{% elif budget_ratio and budget_ratio >= 70 %}progress-warn{% endif %}"
+          style="width: {{ [budget_ratio, 100]|min if budget_ratio else 0 }}%"
+        ></div>
+      </div>
+      <p class="muted">
+        {{ '%.1f'|format(budget_ratio or 0) }}% utilisés
+        ({{ '%.4f'|format(spent) }} / {{ '%.2f'|format(budget) }} USD)
+      </p>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Tendance — 12 derniers mois</h3>
+    {% if trend|sum(attribute='calls') == 0 %}
+      <p class="muted">Aucun appel sur les 12 derniers mois.</p>
+    {% else %}
+      <div class="chart-wrapper">
+        <canvas id="trendChart" height="120"></canvas>
+      </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <h3>Top 10 des élèves (mois courant)</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Élève</th>
+          <th>Appels</th>
+          <th>Tokens</th>
+          <th>Coût USD</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in top_students %}
+          <tr>
+            <td>{{ entry.full_name }}</td>
+            <td>{{ entry.calls }}</td>
+            <td>{{ entry.total_tokens }}</td>
+            <td>{{ '%.4f'|format(entry.cost_usd) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="4" class="muted">Aucun appel attribué à un élève ce mois-ci.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="card">
+    <h3>Répartition par type d'appel (mois courant)</h3>
+    <table class="data-table">
+      <thead>
+        <tr><th>Type</th><th>Appels</th><th>Coût USD</th></tr>
+      </thead>
+      <tbody>
+        {% for row in current.by_type %}
+          <tr>
+            <td><code>{{ row.type }}</code></td>
+            <td>{{ row.calls }}</td>
+            <td>{{ '%.4f'|format(row.cost_usd) }}</td>
+          </tr>
+        {% else %}
+          <tr><td colspan="3" class="muted">Aucun appel ce mois-ci.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+
+  {% if trend|sum(attribute='calls') > 0 %}
+    <script>
+      (function () {
+        const ctx = document.getElementById('trendChart');
+        if (!ctx) return;
+        const labels = {{ trend_labels | tojson }};
+        const calls = {{ trend_calls | tojson }};
+        const costs = {{ trend_costs | tojson }};
+        new Chart(ctx, {
+          data: {
+            labels: labels,
+            datasets: [
+              {
+                type: 'bar',
+                label: 'Appels',
+                data: calls,
+                backgroundColor: 'rgba(0, 210, 255, 0.45)',
+                borderColor: 'rgba(0, 210, 255, 0.9)',
+                borderWidth: 1,
+                yAxisID: 'y',
+              },
+              {
+                type: 'line',
+                label: 'Coût USD',
+                data: costs,
+                borderColor: '#ff4757',
+                backgroundColor: 'rgba(255, 71, 87, 0.18)',
+                tension: 0.25,
+                yAxisID: 'y1',
+              },
+            ],
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: { labels: { color: 'rgba(255,255,255,0.85)' } },
+              tooltip: { mode: 'index', intersect: false },
+            },
+            scales: {
+              x: {
+                ticks: { color: 'rgba(255,255,255,0.75)' },
+                grid: { color: 'rgba(255,255,255,0.07)' },
+              },
+              y: {
+                type: 'linear',
+                position: 'left',
+                title: { display: true, text: 'Appels', color: 'rgba(255,255,255,0.75)' },
+                ticks: { color: 'rgba(255,255,255,0.75)' },
+                grid: { color: 'rgba(255,255,255,0.07)' },
+              },
+              y1: {
+                type: 'linear',
+                position: 'right',
+                title: { display: true, text: 'Coût USD', color: 'rgba(255,255,255,0.75)' },
+                ticks: { color: 'rgba(255,255,255,0.75)' },
+                grid: { drawOnChartArea: false },
+              },
+            },
+          },
+        });
+      })();
+    </script>
+  {% endif %}
+{% endblock %}

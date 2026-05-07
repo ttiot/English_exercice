@@ -4,12 +4,7 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>{% block title %}English Explorer{% endblock %}</title>
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;600;700&display=swap"
-      rel="stylesheet"
-    />
+    <meta name="color-scheme" content="dark" />
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}" />
     {% block extra_head %}{% endblock %}
   </head>
@@ -23,6 +18,9 @@
             <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
             <a class="btn btn-secondary" href="{{ url_for('main.exercise_bank') }}">Banque d'exercices</a>
             <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Espace Parents</a>
+            {% if current_user.is_admin() %}
+              <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_hub') }}">Administration IA</a>
+            {% endif %}
           {% else %}
             <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=current_user.id) }}">Mon profil</a>
           {% endif %}

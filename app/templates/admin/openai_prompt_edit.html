@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% block title %}Prompt — {{ prompt.display_name }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>{{ prompt.display_name }}</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_prompts') }}">← Liste des prompts</a>
+      · <code>{{ prompt.prompt_key }}</code>
+    </p>
+
+    {% if available_variables %}
+      <p>
+        <strong>Variables disponibles :</strong>
+        {% for var in available_variables %}
+          <code>{% raw %}{{% endraw %}{{ var }}{% raw %}}{% endraw %}</code>{% if not loop.last %}, {% endif %}
+        {% endfor %}
+      </p>
+    {% endif %}
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <label for="display_name">Nom d'affichage</label>
+      <input id="display_name" name="display_name" type="text" required value="{{ prompt.display_name }}" />
+
+      <label for="description">Description</label>
+      <textarea id="description" name="description" rows="2">{{ prompt.description or '' }}</textarea>
+
+      <label for="system_prompt">Prompt système</label>
+      <textarea id="system_prompt" name="system_prompt" rows="14" class="prompt-edit" required>{{ prompt.system_prompt }}</textarea>
+
+      <label for="user_prompt_template">Prompt utilisateur (template)</label>
+      <textarea id="user_prompt_template" name="user_prompt_template" rows="10" class="prompt-edit" required>{{ prompt.user_prompt_template }}</textarea>
+
+      <label for="max_output_tokens">Max output tokens</label>
+      <input id="max_output_tokens" name="max_output_tokens" type="number" min="64" max="16000" value="{{ max_output_tokens }}" />
+
+      <label class="checkbox">
+        <input type="checkbox" name="is_active" {% if prompt.is_active %}checked{% endif %} />
+        Actif (sinon, le prompt par défaut hardcodé est utilisé en fallback)
+      </label>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_prompts') }}">Annuler</a>
+      </div>
+    </form>
+
+    {% if is_default_known %}
+      <form method="post" action="{{ url_for('main.admin_openai_prompt_reset', prompt_key=prompt.prompt_key) }}" style="margin-top: 1rem;">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button
+          class="btn btn-danger"
+          type="submit"
+          onclick="return confirm('Remplacer ce prompt par les valeurs par défaut ?');"
+        >
+          Réinitialiser aux valeurs par défaut
+        </button>
+      </form>
+    {% endif %}
+  </div>
+{% endblock %}

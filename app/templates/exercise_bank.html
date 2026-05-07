@@ -3,7 +3,12 @@
 {% block content %}
   <div class="card">
     <h2>Banque d'exercices</h2>
-    <p class="muted">Filtrez les catégories par niveau et thème.</p>
+    <p class="muted">
+      Filtrez les catégories par niveau et thème.
+      {% if current_user and (current_user.is_parent() or current_user.is_admin()) %}
+        · <a href="{{ url_for('main.ai_exercise_pool') }}">Pool d'exercices IA →</a>
+      {% endif %}
+    </p>
     <form method="get" class="inline-form">
       <select name="domain">
         <option value="">Tous les thèmes</option>

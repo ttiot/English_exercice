@@ -12,10 +12,26 @@
         <option value="challenge_10" {% if default_mode == 'challenge_10' %}selected{% endif %}>Défi 10 minutes</option>
         <option value="challenge_15" {% if default_mode == 'challenge_15' %}selected{% endif %}>Défi 15 minutes</option>
         <option value="control" {% if default_mode == 'control' %}selected{% endif %}>Mode contrôle (devoir noté)</option>
+        <option value="ai_custom" {% if default_mode == 'ai_custom' %}selected{% endif %}>Prompt libre (IA)</option>
       </select>
       <p class="form-help">
         Les défis sont chronométrés (10 ou 15 min). Le mode contrôle applique un temps conseillé de 20 min.
+        Le mode <strong>Prompt libre</strong> demande à l'IA de générer des exercices sur le thème de ton choix.
       </p>
+
+      <div id="ai-prompt-block" class="ai-prompt-block" hidden>
+        <label for="student_prompt">Sur quoi veux-tu travailler ?</label>
+        <textarea
+          id="student_prompt"
+          name="student_prompt"
+          rows="3"
+          maxlength="500"
+          placeholder="Ex : 10 questions sur la nourriture en utilisant les mots interrogatifs what, when, who."
+        ></textarea>
+        <p class="form-help">
+          L'IA génère des exercices adaptés à ton niveau, conservés pour la prochaine fois.
+        </p>
+      </div>
       <label for="question_count">Nombre de questions</label>
       <input id="question_count" name="question_count" type="number" min="5" max="40" value="20" />
 
@@ -51,4 +67,25 @@
       <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">Annuler</a>
     </form>
   </div>
+{% endblock %}
+{% block scripts %}
+  {{ super() }}
+  <script>
+    (function () {
+      const modeSelect = document.getElementById('session_mode');
+      const aiBlock = document.getElementById('ai-prompt-block');
+      const promptField = document.getElementById('student_prompt');
+      if (!modeSelect || !aiBlock) return;
+
+      function refresh() {
+        const isAi = modeSelect.value === 'ai_custom';
+        aiBlock.hidden = !isAi;
+        if (promptField) {
+          promptField.required = isAi;
+        }
+      }
+      modeSelect.addEventListener('change', refresh);
+      refresh();
+    })();
+  </script>
 {% endblock %}
