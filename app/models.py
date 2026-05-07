@@ -106,6 +106,19 @@ class SessionExercise(db.Model, TimestampMixin):
     category = db.Column(db.String(50), nullable=False)
     is_correct = db.Column(db.Boolean, default=False, nullable=False)
     display_order = db.Column(db.Integer, default=0, nullable=False)
+    # Format de question : 'text' (libre, défaut), 'mcq' (choix unique parmi
+    # `options_json`), 'word_bank' (saisie libre + banque de mots affichée).
+    question_type = db.Column(db.String(20), nullable=False, default="text")
+    # Liste JSON des options affichées (QCM ou banque de mots).
+    options_json = db.Column(db.Text, nullable=True)
+    # Liste JSON de variantes de réponse acceptées en plus de `correct_answer`.
+    accepted_answers_json = db.Column(db.Text, nullable=True)
+    # Origine de l'exercice : 'procedural', 'ai', 'prepared'.
+    source = db.Column(db.String(20), nullable=False, default="procedural")
+    # FK optionnelle vers le pool d'exercices IA (pour la traçabilité).
+    ai_exercise_id = db.Column(
+        db.Integer, db.ForeignKey("ai_generated_exercises.id"), nullable=True
+    )
 
 
 class PreparedExercise(db.Model, TimestampMixin):
@@ -557,6 +570,43 @@ class AICallLog(db.Model):
                 for row in by_type
             ],
         }
+
+
+class AIGeneratedExercise(db.Model, TimestampMixin):
+    """Pool des exercices générés par OpenAI, conservés pour réutilisation.
+
+    Chaque ligne capture l'énoncé final + la réponse + le prompt brut tapé
+    par l'élève qui a déclenché la génération. `times_used` est incrémenté
+    à chaque session qui repioche l'exercice ; `is_disabled` permet à un
+    parent de retirer un exo douteux du pool sans casser les sessions
+    historiques (elles gardent leur copie dans `session_exercises`).
+    """
+
+    __tablename__ = "ai_generated_exercises"
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_prompt = db.Column(db.Text, nullable=False)
+    prompt = db.Column(db.Text, nullable=False)
+    answer = db.Column(db.String(500), nullable=False)
+    category_code = db.Column(db.String(80), nullable=False, index=True)
+    question_type = db.Column(db.String(20), nullable=False, default="text")
+    options_json = db.Column(db.Text, nullable=True)
+    accepted_answers_json = db.Column(db.Text, nullable=True)
+    difficulty = db.Column(db.String(20), nullable=False, default="beginner", index=True)
+    model_used = db.Column(db.String(100), nullable=True)
+    student_id = db.Column(
+        db.Integer, db.ForeignKey("students.id"), nullable=True, index=True
+    )
+    call_log_id = db.Column(
+        db.Integer, db.ForeignKey("ai_call_log.id"), nullable=True
+    )
+    times_used = db.Column(db.Integer, nullable=False, default=0)
+    is_disabled = db.Column(db.Boolean, nullable=False, default=False, index=True)
+
+    student = db.relationship(
+        "Student", backref=db.backref("ai_generated_exercises", lazy="dynamic")
+    )
+    call_log = db.relationship("AICallLog")
 
 
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
@@ -1043,6 +1093,55 @@ def ensure_schema_migrations() -> None:
             )
             needs_commit = True
 
+    if "session_exercises" in table_names:
+        session_ex_columns = {
+            column["name"] for column in inspector.get_columns("session_exercises")
+        }
+        if "question_type" not in session_ex_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE session_exercises ADD COLUMN question_type "
+                    "VARCHAR(20) DEFAULT 'text'"
+                )
+            )
+            db.session.execute(
+                text(
+                    "UPDATE session_exercises SET question_type = 'text' "
+                    "WHERE question_type IS NULL"
+                )
+            )
+            needs_commit = True
+        if "options_json" not in session_ex_columns:
+            db.session.execute(
+                text("ALTER TABLE session_exercises ADD COLUMN options_json TEXT")
+            )
+            needs_commit = True
+        if "accepted_answers_json" not in session_ex_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE session_exercises ADD COLUMN accepted_answers_json TEXT"
+                )
+            )
+            needs_commit = True
+        if "source" not in session_ex_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE session_exercises ADD COLUMN source "
+                    "VARCHAR(20) DEFAULT 'procedural'"
+                )
+            )
+            db.session.execute(
+                text(
+                    "UPDATE session_exercises SET source = 'procedural' "
+                    "WHERE source IS NULL"
+                )
+            )
+            needs_commit = True
+        if "ai_exercise_id" not in session_ex_columns:
+            db.session.execute(
+                text("ALTER TABLE session_exercises ADD COLUMN ai_exercise_id INTEGER")
+            )
+            needs_commit = True
 
     if needs_commit:
         db.session.commit()
@@ -1092,6 +1191,7 @@ __all__ = [
     "StudentSkillProgress",
     "OpenAIConfig",
     "AICallLog",
+    "AIGeneratedExercise",
     "ensure_default_badges",
     "ensure_default_categories",
     "ensure_default_prerequisites",
