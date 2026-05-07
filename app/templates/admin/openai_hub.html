@@ -1,0 +1,98 @@
+{% extends 'base.html' %}
+{% block title %}Administration OpenAI{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Administration OpenAI</h2>
+    <p class="muted">
+      Tableau de bord central pour la configuration, l'observabilité et les
+      prompts du service IA.
+    </p>
+
+    <div class="kpi-grid">
+      <div class="kpi-tile">
+        <span class="kpi-label">Statut clé API</span>
+        <span class="kpi-value">
+          {% if has_key %}
+            <span class="badge badge-success">Active</span>
+          {% else %}
+            <span class="badge badge-danger">Absente</span>
+          {% endif %}
+        </span>
+        <span class="kpi-sub">
+          {% if config %}
+            Modèle : {{ config.default_model or '—' }}
+          {% else %}
+            Aucune configuration en base
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="kpi-tile">
+        <span class="kpi-label">Coût ce mois-ci</span>
+        <span class="kpi-value">{{ '%.4f'|format(spent) }} USD</span>
+        <span class="kpi-sub">
+          {% if budget %}
+            sur {{ '%.2f'|format(budget) }} USD
+            ({{ '%.1f'|format(budget_ratio or 0) }}%)
+          {% else %}
+            Aucun plafond mensuel défini
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="kpi-tile">
+        <span class="kpi-label">Appels (mois)</span>
+        <span class="kpi-value">{{ current.calls }}</span>
+        <span class="kpi-sub">
+          {% if success_stats.total %}
+            {{ '%.1f'|format(success_stats.success_rate or 0) }}% de succès
+          {% else %}
+            Aucun appel ce mois-ci
+          {% endif %}
+        </span>
+      </div>
+
+      <div class="kpi-tile">
+        <span class="kpi-label">Latence moyenne</span>
+        <span class="kpi-value">
+          {% if avg_latency %}
+            {{ '%.0f'|format(avg_latency) }} ms
+          {% else %}
+            —
+          {% endif %}
+        </span>
+        <span class="kpi-sub">tokens : {{ current.input_tokens }} in / {{ current.output_tokens }} out</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Sections</h3>
+    <div class="hub-grid">
+      <a class="hub-tile" href="{{ url_for('main.admin_openai_config') }}">
+        <h4>Configuration</h4>
+        <p class="muted">Clé API, modèle par défaut, base URL, plafond budget.</p>
+      </a>
+      <a class="hub-tile" href="{{ url_for('main.admin_openai_prompts') }}">
+        <h4>Prompts</h4>
+        <p class="muted">Éditer les prompts système / utilisateur envoyés à OpenAI.</p>
+      </a>
+      <a class="hub-tile" href="{{ url_for('main.admin_openai_logs') }}">
+        <h4>Logs des appels</h4>
+        <p class="muted">Historique paginé : tokens, coût, durée, prompts envoyés.</p>
+      </a>
+      <a class="hub-tile" href="{{ url_for('main.admin_openai_statistics') }}">
+        <h4>Statistiques</h4>
+        <p class="muted">Trend 12 mois, taux de succès, top élèves, latence.</p>
+      </a>
+      <a class="hub-tile" href="{{ url_for('main.admin_openai_budget') }}">
+        <h4>Budget</h4>
+        <p class="muted">Consommation mois en cours et 3 derniers mois par type d'appel.</p>
+      </a>
+      <a class="hub-tile" href="{{ url_for('main.ai_exercise_pool') }}">
+        <h4>Pool d'exercices IA</h4>
+        <p class="muted">Liste des exercices générés, activation / désactivation.</p>
+      </a>
+    </div>
+  </div>
+{% endblock %}

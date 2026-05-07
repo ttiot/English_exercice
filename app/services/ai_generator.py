@@ -22,7 +22,7 @@ from typing import List, Optional, Tuple
 
 from .. import db
 from ..exercise_factory import AVAILABLE_CATEGORIES, ExercisePrompt
-from ..models import AICallLog, AIGeneratedExercise, OpenAIConfig
+from ..models import AICallLog, AIGeneratedExercise, OpenAIConfig, OpenAIPrompt
 
 logger = logging.getLogger(__name__)
 
@@ -124,22 +124,35 @@ Catégories disponibles : {categories}.
 """
 
 
-def _build_system_prompt(difficulty: str) -> str:
-    return _SYSTEM_PROMPT_TEMPLATE.format(
-        difficulty=difficulty,
-        categories=", ".join(_ALLOWED_CATEGORIES),
-    )
+_USER_PROMPT_TEMPLATE = (
+    "Génère exactement {count} exercices d'anglais sur le thème suivant, "
+    "en respectant le niveau {difficulty} :\n\n"
+    "« {student_prompt} »\n\n"
+    "Varie les `question_type` et les `category` quand c'est cohérent avec "
+    "le thème. Donne un mélange équilibré de types (texte / mcq / "
+    "word_bank) si le thème s'y prête."
+)
 
 
-def _build_user_prompt(student_prompt: str, count: int, difficulty: str) -> str:
-    return (
-        f"Génère exactement {count} exercices d'anglais sur le thème suivant, "
-        f"en respectant le niveau {difficulty} :\n\n"
-        f"« {student_prompt.strip()} »\n\n"
-        "Varie les `question_type` et les `category` quand c'est cohérent avec "
-        "le thème. Donne un mélange équilibré de types (texte / mcq / "
-        "word_bank) si le thème s'y prête."
-    )
+# Prompts par défaut seedés en BDD au boot par ``ensure_default_prompts()``.
+# Si un admin édite le prompt côté UI, c'est la version BDD qui prime ;
+# les valeurs ci-dessous ne servent plus que de fallback (KeyError, reset).
+_DEFAULT_PROMPTS: dict = {
+    "generate_exercises": {
+        "display_name": "Génération d'exercices",
+        "description": (
+            "Prompt utilisé par les sessions « Sur mesure (IA) » pour générer "
+            "des exercices d'anglais à partir d'un thème saisi par l'élève. "
+            "La sortie doit être un JSON conforme au schéma `exercise_batch`."
+        ),
+        "system_prompt": _SYSTEM_PROMPT_TEMPLATE,
+        "user_prompt_template": _USER_PROMPT_TEMPLATE,
+        "available_variables": json.dumps(
+            ["difficulty", "categories", "student_prompt", "count"]
+        ),
+        "parameters_json": json.dumps({"max_output_tokens": 2000}),
+    },
+}
 
 
 def get_openai_client() -> Tuple[Optional[object], dict]:
@@ -345,8 +358,35 @@ def generate_exercises(
 
     model = info["model"] or "gpt-4o-mini"
     api_key_source = info["source"]
-    system_prompt = _build_system_prompt(difficulty)
-    user_prompt = _build_user_prompt(student_prompt, count, difficulty)
+
+    # Prompt résolu depuis la BDD (admin-éditable). Fallback sur les
+    # constantes hardcodées si la ligne est absente (cas marginal : la
+    # table existe mais le seed n'a pas tourné).
+    prompt_row = OpenAIPrompt.get_or_create_default("generate_exercises")
+    if prompt_row:
+        system_prompt = prompt_row.render_system_prompt(
+            difficulty=difficulty,
+            categories=", ".join(_ALLOWED_CATEGORIES),
+        )
+        user_prompt = prompt_row.render_user_prompt(
+            student_prompt=student_prompt,
+            count=count,
+            difficulty=difficulty,
+        )
+        max_output_tokens = int(
+            prompt_row.get_parameters().get("max_output_tokens") or 2000
+        )
+    else:
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+            difficulty=difficulty,
+            categories=", ".join(_ALLOWED_CATEGORIES),
+        )
+        user_prompt = _USER_PROMPT_TEMPLATE.format(
+            student_prompt=student_prompt,
+            count=count,
+            difficulty=difficulty,
+        )
+        max_output_tokens = 2000
 
     response = None
     response_text = None
@@ -382,7 +422,7 @@ def generate_exercises(
                     "strict": True,
                 },
             },
-            max_output_tokens=2000,
+            max_output_tokens=max_output_tokens,
         )
         response_text = getattr(response, "output_text", None) or ""
         input_tokens, output_tokens = _extract_token_usage(response)

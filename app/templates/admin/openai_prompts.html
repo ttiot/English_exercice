@@ -1,0 +1,40 @@
+{% extends 'base.html' %}
+{% block title %}Prompts OpenAI{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Prompts OpenAI</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_hub') }}">← Administration OpenAI</a>
+    </p>
+    <p>
+      Ces prompts sont chargés à chaque appel. Toute modification est prise en
+      compte immédiatement, sans redémarrage. Un bouton « Réinitialiser »
+      permet de revenir aux valeurs par défaut.
+    </p>
+
+    <div class="hub-grid">
+      {% for prompt in prompts %}
+        <a class="hub-tile" href="{{ url_for('main.admin_openai_prompt_edit', prompt_key=prompt.prompt_key) }}">
+          <h4>{{ prompt.display_name }}</h4>
+          <code class="muted">{{ prompt.prompt_key }}</code>
+          {% if prompt.description %}
+            <p class="muted">{{ prompt.description }}</p>
+          {% endif %}
+          <p>
+            {% if prompt.is_active %}
+              <span class="badge badge-success">Actif</span>
+            {% else %}
+              <span class="badge badge-danger">Inactif</span>
+            {% endif %}
+            {% if prompt.prompt_key not in default_keys %}
+              <span class="badge">Sans valeur par défaut</span>
+            {% endif %}
+          </p>
+          <p class="muted">Mis à jour : {{ prompt.updated_at.strftime('%Y-%m-%d %H:%M') }}</p>
+        </a>
+      {% else %}
+        <p class="muted">Aucun prompt en base.</p>
+      {% endfor %}
+    </div>
+  </div>
+{% endblock %}

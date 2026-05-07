@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Connexion{% endblock %}
 {% block content %}
+  <div class="auth-page">
   <div class="card auth-card">
     <h2>Connexion</h2>
     <p class="muted">Entre ton e-mail et ton mot de passe pour accéder à l'application.</p>
@@ -18,5 +19,6 @@
     <p class="muted" style="margin-top: 1rem;">
       Pas encore de compte ? <a href="{{ url_for('main.register') }}">Créer un compte élève</a>
     </p>
+  </div>
   </div>
 {% endblock %}

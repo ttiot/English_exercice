@@ -55,6 +55,7 @@ from .models import (
     AIGeneratedExercise,
     Badge,
     OpenAIConfig,
+    OpenAIPrompt,
     PracticeSession,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
@@ -2516,4 +2517,148 @@ def admin_openai_budget():
         budget=budget,
         spent=spent,
         ratio=ratio,
+    )
+
+
+@bp.route("/admin/openai/")
+@_admin_required
+def admin_openai_hub():
+    """Page d'accueil du panneau d'administration OpenAI."""
+    config = OpenAIConfig.get_active()
+    current = AICallLog.get_monthly_stats()
+    success_stats = AICallLog.get_success_stats()
+    avg_latency = AICallLog.get_avg_latency_ms()
+    has_key = bool(config and config.get_api_key())
+    budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
+    spent = float(current.get("cost_usd") or 0.0)
+    budget_ratio = (spent / budget * 100) if budget else None
+
+    return render_template(
+        "admin/openai_hub.html",
+        config=config,
+        has_key=has_key,
+        current=current,
+        success_stats=success_stats,
+        avg_latency=avg_latency,
+        budget=budget,
+        spent=spent,
+        budget_ratio=budget_ratio,
+    )
+
+
+@bp.route("/admin/openai/prompts")
+@_admin_required
+def admin_openai_prompts():
+    """Liste des prompts éditables."""
+    from .services.ai_generator import _DEFAULT_PROMPTS
+
+    # On garantit que toutes les clés connues existent en BDD (pour l'affichage).
+    for key in _DEFAULT_PROMPTS:
+        OpenAIPrompt.get_or_create_default(key)
+
+    prompts = OpenAIPrompt.query.order_by(OpenAIPrompt.prompt_key.asc()).all()
+    return render_template(
+        "admin/openai_prompts.html",
+        prompts=prompts,
+        default_keys=set(_DEFAULT_PROMPTS.keys()),
+    )
+
+
+@bp.route("/admin/openai/prompts/<prompt_key>", methods=["GET", "POST"])
+@_admin_required
+def admin_openai_prompt_edit(prompt_key: str):
+    """Édition du prompt système / utilisateur / paramètres."""
+    prompt = OpenAIPrompt.get_or_create_default(prompt_key)
+    if not prompt:
+        abort(404)
+
+    if request.method == "POST":
+        display_name = sanitize_text_input(request.form.get("display_name", ""))
+        description = sanitize_text_input(request.form.get("description", ""))
+        # Pas de sanitize sur les prompts : on veut préserver le formatage
+        # (sauts de ligne, accolades de templating, etc.). On limite juste
+        # la longueur pour éviter une surcharge.
+        system_prompt = (request.form.get("system_prompt") or "")[:20000]
+        user_prompt_template = (request.form.get("user_prompt_template") or "")[:20000]
+        max_tokens_raw = request.form.get("max_output_tokens", "").strip()
+        is_active = bool(request.form.get("is_active"))
+
+        if not display_name:
+            flash("Le nom d'affichage est requis.", "warning")
+        elif not system_prompt or not user_prompt_template:
+            flash("Le prompt système et le prompt utilisateur sont requis.", "warning")
+        else:
+            prompt.display_name = display_name
+            prompt.description = description or None
+            prompt.system_prompt = system_prompt
+            prompt.user_prompt_template = user_prompt_template
+            prompt.is_active = is_active
+
+            params = prompt.get_parameters()
+            if max_tokens_raw:
+                try:
+                    params["max_output_tokens"] = max(64, min(int(max_tokens_raw), 16000))
+                except ValueError:
+                    flash("Nombre de tokens max invalide, ignoré.", "warning")
+            prompt.parameters_json = json.dumps(params) if params else None
+
+            db.session.commit()
+            flash("Prompt enregistré.", "success")
+            return redirect(url_for("main.admin_openai_prompt_edit", prompt_key=prompt_key))
+
+    from .services.ai_generator import _DEFAULT_PROMPTS
+
+    return render_template(
+        "admin/openai_prompt_edit.html",
+        prompt=prompt,
+        is_default_known=prompt_key in _DEFAULT_PROMPTS,
+        max_output_tokens=int(prompt.get_parameters().get("max_output_tokens") or 2000),
+        available_variables=prompt.get_available_variables(),
+    )
+
+
+@bp.route("/admin/openai/prompts/<prompt_key>/reset", methods=["POST"])
+@_admin_required
+def admin_openai_prompt_reset(prompt_key: str):
+    """Restaure les valeurs par défaut hardcodées pour ce prompt."""
+    prompt = OpenAIPrompt.query.filter_by(prompt_key=prompt_key).first()
+    if not prompt:
+        abort(404)
+    if prompt.reset_to_default():
+        db.session.commit()
+        flash("Prompt réinitialisé aux valeurs par défaut.", "success")
+    else:
+        flash("Aucune valeur par défaut connue pour cette clé.", "warning")
+    return redirect(url_for("main.admin_openai_prompt_edit", prompt_key=prompt_key))
+
+
+@bp.route("/admin/openai/statistics")
+@_admin_required
+def admin_openai_statistics():
+    """Tableau de bord d'usage OpenAI : trend annuel, top élèves, taux de succès."""
+    config = OpenAIConfig.get_active()
+    current = AICallLog.get_monthly_stats()
+    success_stats = AICallLog.get_success_stats()
+    avg_latency = AICallLog.get_avg_latency_ms()
+    trend = AICallLog.get_yearly_trend(months=12)
+    top_students = AICallLog.get_top_students(limit=10)
+
+    budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
+    spent = float(current.get("cost_usd") or 0.0)
+    budget_ratio = (spent / budget * 100) if budget else None
+
+    return render_template(
+        "admin/openai_statistics.html",
+        config=config,
+        current=current,
+        success_stats=success_stats,
+        avg_latency=avg_latency,
+        trend=trend,
+        trend_labels=[bucket["label"] for bucket in trend],
+        trend_calls=[bucket["calls"] for bucket in trend],
+        trend_costs=[round(bucket["cost_usd"], 4) for bucket in trend],
+        top_students=top_students,
+        budget=budget,
+        spent=spent,
+        budget_ratio=budget_ratio,
     )

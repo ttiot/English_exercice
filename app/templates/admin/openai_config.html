@@ -86,8 +86,10 @@
     </form>
 
     <p class="muted" style="margin-top: 1.5rem;">
-      <a href="{{ url_for('main.admin_openai_logs') }}">Logs IA</a> ·
-      <a href="{{ url_for('main.admin_openai_budget') }}">Budget mensuel</a>
+      <a href="{{ url_for('main.admin_openai_hub') }}">← Administration IA</a> ·
+      <a href="{{ url_for('main.admin_openai_logs') }}">Logs</a> ·
+      <a href="{{ url_for('main.admin_openai_budget') }}">Budget</a> ·
+      <a href="{{ url_for('main.admin_openai_statistics') }}">Statistiques</a>
     </p>
   </div>
 {% endblock %}

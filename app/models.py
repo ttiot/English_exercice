@@ -584,6 +584,157 @@ class AICallLog(db.Model):
             ],
         }
 
+    @staticmethod
+    def get_yearly_trend(months: int = 12) -> list:
+        """Renvoie une liste chronologique de ``months`` dicts mensuels.
+
+        Chaque entrée : ``{year, month, label, calls, cost_usd, total_tokens}``.
+        Trié du plus ancien au plus récent. Les mois sans appel apparaissent
+        avec des compteurs à 0.
+        """
+        from sqlalchemy import func, extract
+
+        now = datetime.utcnow()
+        buckets: list = []
+        for offset in range(months - 1, -1, -1):
+            year = now.year
+            month = now.month - offset
+            while month <= 0:
+                month += 12
+                year -= 1
+            row = (
+                db.session.query(
+                    func.count(AICallLog.id).label("calls"),
+                    func.sum(AICallLog.estimated_cost_usd).label("cost"),
+                    func.sum(AICallLog.total_tokens).label("tokens"),
+                )
+                .filter(
+                    extract("year", AICallLog.created_at) == year,
+                    extract("month", AICallLog.created_at) == month,
+                )
+                .first()
+            )
+            buckets.append(
+                {
+                    "year": year,
+                    "month": month,
+                    "label": f"{year:04d}-{month:02d}",
+                    "calls": int(row.calls or 0) if row else 0,
+                    "cost_usd": float(row.cost) if row and row.cost else 0.0,
+                    "total_tokens": int(row.tokens or 0) if row else 0,
+                }
+            )
+        return buckets
+
+    @staticmethod
+    def get_top_students(
+        limit: int = 10,
+        year: Optional[int] = None,
+        month: Optional[int] = None,
+    ) -> list:
+        """Top ``limit`` élèves par coût mensuel (mois courant par défaut)."""
+        from sqlalchemy import func, extract
+
+        if year is None or month is None:
+            now = datetime.utcnow()
+            year = now.year
+            month = now.month
+
+        rows = (
+            db.session.query(
+                AICallLog.student_id,
+                func.count(AICallLog.id).label("calls"),
+                func.sum(AICallLog.estimated_cost_usd).label("cost"),
+                func.sum(AICallLog.total_tokens).label("tokens"),
+            )
+            .filter(
+                AICallLog.student_id.isnot(None),
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .group_by(AICallLog.student_id)
+            .order_by(func.sum(AICallLog.estimated_cost_usd).desc().nullslast())
+            .limit(limit)
+            .all()
+        )
+        student_ids = [row.student_id for row in rows]
+        students = (
+            {s.id: s for s in Student.query.filter(Student.id.in_(student_ids)).all()}
+            if student_ids
+            else {}
+        )
+        result = []
+        for row in rows:
+            student = students.get(row.student_id)
+            result.append(
+                {
+                    "student_id": row.student_id,
+                    "full_name": student.full_name() if student else "—",
+                    "calls": int(row.calls or 0),
+                    "cost_usd": float(row.cost) if row.cost else 0.0,
+                    "total_tokens": int(row.tokens or 0),
+                }
+            )
+        return result
+
+    @staticmethod
+    def get_success_stats(
+        year: Optional[int] = None, month: Optional[int] = None
+    ) -> dict:
+        """Compteurs ``{success, error, total, success_rate}`` pour un mois."""
+        from sqlalchemy import func, extract
+
+        if year is None or month is None:
+            now = datetime.utcnow()
+            year = now.year
+            month = now.month
+
+        rows = (
+            db.session.query(
+                AICallLog.response_status,
+                func.count(AICallLog.id).label("count"),
+            )
+            .filter(
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .group_by(AICallLog.response_status)
+            .all()
+        )
+        success = sum(r.count for r in rows if r.response_status == "success")
+        error = sum(r.count for r in rows if r.response_status != "success")
+        total = success + error
+        rate = (success / total * 100.0) if total else None
+        return {
+            "success": success,
+            "error": error,
+            "total": total,
+            "success_rate": rate,
+        }
+
+    @staticmethod
+    def get_avg_latency_ms(
+        year: Optional[int] = None, month: Optional[int] = None
+    ) -> Optional[float]:
+        """Latence moyenne (ms) sur les appels du mois ; ``None`` si vide."""
+        from sqlalchemy import func, extract
+
+        if year is None or month is None:
+            now = datetime.utcnow()
+            year = now.year
+            month = now.month
+
+        avg = (
+            db.session.query(func.avg(AICallLog.duration_ms))
+            .filter(
+                AICallLog.duration_ms.isnot(None),
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .scalar()
+        )
+        return float(avg) if avg is not None else None
+
 
 class AIGeneratedExercise(db.Model, TimestampMixin):
     """Pool des exercices générés par OpenAI, conservés pour réutilisation.
@@ -620,6 +771,132 @@ class AIGeneratedExercise(db.Model, TimestampMixin):
         "Student", backref=db.backref("ai_generated_exercises", lazy="dynamic")
     )
     call_log = db.relationship("AICallLog")
+
+
+class OpenAIPrompt(db.Model, TimestampMixin):
+    """Prompts éditables depuis l'admin pour les appels OpenAI.
+
+    Une ligne par `prompt_key` (ex. ``generate_exercises``). Les valeurs par
+    défaut sont seedées au boot par ``ensure_default_prompts()`` à partir du
+    dict ``_DEFAULT_PROMPTS`` défini dans ``app.services.ai_generator``.
+    """
+
+    __tablename__ = "openai_prompts"
+
+    id = db.Column(db.Integer, primary_key=True)
+    prompt_key = db.Column(db.String(80), unique=True, nullable=False, index=True)
+    display_name = db.Column(db.String(160), nullable=False)
+    description = db.Column(db.Text, nullable=True)
+    system_prompt = db.Column(db.Text, nullable=False, default="")
+    user_prompt_template = db.Column(db.Text, nullable=False, default="")
+    available_variables = db.Column(db.Text, nullable=True)  # JSON list
+    parameters_json = db.Column(db.Text, nullable=True)  # JSON dict
+    is_active = db.Column(db.Boolean, nullable=False, default=True)
+
+    @staticmethod
+    def get_or_create_default(prompt_key: str) -> Optional["OpenAIPrompt"]:
+        """Retourne la ligne pour ``prompt_key`` ; la crée à partir des
+        valeurs par défaut si absente. ``None`` si aucune valeur par défaut
+        n'est connue pour cette clé."""
+        from .services.ai_generator import _DEFAULT_PROMPTS
+
+        prompt = OpenAIPrompt.query.filter_by(prompt_key=prompt_key).first()
+        if prompt:
+            return prompt
+        defaults = _DEFAULT_PROMPTS.get(prompt_key)
+        if not defaults:
+            return None
+        prompt = OpenAIPrompt(
+            prompt_key=prompt_key,
+            display_name=defaults["display_name"],
+            description=defaults.get("description"),
+            system_prompt=defaults["system_prompt"],
+            user_prompt_template=defaults["user_prompt_template"],
+            available_variables=defaults.get("available_variables"),
+            parameters_json=defaults.get("parameters_json"),
+            is_active=True,
+        )
+        db.session.add(prompt)
+        db.session.commit()
+        return prompt
+
+    def reset_to_default(self) -> bool:
+        """Remplace les champs éditables par les valeurs par défaut.
+
+        Retourne ``True`` si le reset a eu lieu, ``False`` si aucune valeur
+        par défaut n'est définie pour ce ``prompt_key``.
+        """
+        from .services.ai_generator import _DEFAULT_PROMPTS
+
+        defaults = _DEFAULT_PROMPTS.get(self.prompt_key)
+        if not defaults:
+            return False
+        self.display_name = defaults["display_name"]
+        self.description = defaults.get("description")
+        self.system_prompt = defaults["system_prompt"]
+        self.user_prompt_template = defaults["user_prompt_template"]
+        self.available_variables = defaults.get("available_variables")
+        self.parameters_json = defaults.get("parameters_json")
+        return True
+
+    def get_parameters(self) -> dict:
+        """Parse ``parameters_json`` en dict (vide si absent / invalide)."""
+        import json
+
+        if not self.parameters_json:
+            return {}
+        try:
+            data = json.loads(self.parameters_json)
+        except (ValueError, TypeError):
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def get_available_variables(self) -> list:
+        """Liste des variables exposées dans le template (pour l'admin)."""
+        import json
+
+        if not self.available_variables:
+            return []
+        try:
+            data = json.loads(self.available_variables)
+        except (ValueError, TypeError):
+            return []
+        return data if isinstance(data, list) else []
+
+    def render_user_prompt(self, **ctx) -> str:
+        """Rend ``user_prompt_template`` avec ``str.format``.
+
+        En cas de ``KeyError`` (template invalide après édition admin),
+        retombe sur la valeur par défaut hardcodée pour ne pas casser la
+        génération.
+        """
+        try:
+            return self.user_prompt_template.format(**ctx)
+        except (KeyError, IndexError, ValueError):
+            from .services.ai_generator import _DEFAULT_PROMPTS
+
+            defaults = _DEFAULT_PROMPTS.get(self.prompt_key)
+            if not defaults:
+                return self.user_prompt_template
+            try:
+                return defaults["user_prompt_template"].format(**ctx)
+            except (KeyError, IndexError, ValueError):
+                return defaults["user_prompt_template"]
+
+    def render_system_prompt(self, **ctx) -> str:
+        """Rend ``system_prompt`` avec ``str.format`` (fallback identique)."""
+        try:
+            return self.system_prompt.format(**ctx)
+        except (KeyError, IndexError, ValueError):
+            from .services.ai_generator import _DEFAULT_PROMPTS
+
+            defaults = _DEFAULT_PROMPTS.get(self.prompt_key)
+            if not defaults:
+                return self.system_prompt
+            try:
+                return defaults["system_prompt"].format(**ctx)
+            except (KeyError, IndexError, ValueError):
+                return defaults["system_prompt"]
 
 
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
@@ -902,6 +1179,34 @@ def ensure_default_categories() -> None:
             category.unlocked_by_default = bool(metadata.get("unlocked_by_default", True))
             created = True
 
+    if created:
+        db.session.commit()
+
+
+def ensure_default_prompts() -> None:
+    """Crée la ligne ``OpenAIPrompt`` pour chaque clé connue dans
+    ``_DEFAULT_PROMPTS``. Idempotent : ne touche pas aux lignes existantes
+    (un admin peut avoir édité le contenu)."""
+    from .services.ai_generator import _DEFAULT_PROMPTS
+
+    existing_keys = {p.prompt_key for p in OpenAIPrompt.query.all()}
+    created = False
+    for key, defaults in _DEFAULT_PROMPTS.items():
+        if key in existing_keys:
+            continue
+        db.session.add(
+            OpenAIPrompt(
+                prompt_key=key,
+                display_name=defaults["display_name"],
+                description=defaults.get("description"),
+                system_prompt=defaults["system_prompt"],
+                user_prompt_template=defaults["user_prompt_template"],
+                available_variables=defaults.get("available_variables"),
+                parameters_json=defaults.get("parameters_json"),
+                is_active=True,
+            )
+        )
+        created = True
     if created:
         db.session.commit()
 

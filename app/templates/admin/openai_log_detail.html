@@ -4,7 +4,8 @@
   <div class="card">
     <h2>Log IA #{{ log.id }}</h2>
     <p class="muted">
-      <a href="{{ url_for('main.admin_openai_logs') }}">← Tous les logs</a>
+      <a href="{{ url_for('main.admin_openai_logs') }}">← Tous les logs</a> ·
+      <a href="{{ url_for('main.admin_openai_hub') }}">Administration IA</a>
     </p>
 
     <dl class="meta-list">
@@ -23,17 +24,39 @@
     </dl>
 
     <h3>Prompt système</h3>
-    <pre class="prompt-block">{{ log.system_prompt or '' }}</pre>
+    <div class="prompt-wrapper">
+      <pre class="prompt-block" id="sys-prompt">{{ log.system_prompt or '—' }}</pre>
+      <button class="btn btn-secondary btn-small copy-btn" data-target="sys-prompt">Copier</button>
+    </div>
 
     <h3>Prompt utilisateur</h3>
-    <pre class="prompt-block">{{ log.user_prompt or '' }}</pre>
+    <div class="prompt-wrapper">
+      <pre class="prompt-block" id="user-prompt">{{ log.user_prompt or '—' }}</pre>
+      <button class="btn btn-secondary btn-small copy-btn" data-target="user-prompt">Copier</button>
+    </div>
 
-    <h3>Réponse</h3>
-    <pre class="prompt-block">{{ log.response_text or '' }}</pre>
+    <h3>Réponse brute</h3>
+    <div class="prompt-wrapper">
+      <pre class="prompt-block {% if log.response_status != 'success' %}prompt-error{% endif %}" id="response-text">{{ log.response_text or '—' }}</pre>
+      <button class="btn btn-secondary btn-small copy-btn" data-target="response-text">Copier</button>
+    </div>
 
     {% if log.context_json %}
       <h3>Contexte</h3>
-      <pre class="prompt-block">{{ log.context_json }}</pre>
+      <pre class="prompt-block" id="ctx-json">{{ log.context_json }}</pre>
     {% endif %}
   </div>
+{% endblock %}
+{% block scripts %}
+  <script>
+    document.querySelectorAll('.copy-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = document.getElementById(btn.getAttribute('data-target'));
+        navigator.clipboard.writeText(target ? target.innerText : '').then(function () {
+          btn.textContent = 'Copié !';
+          setTimeout(function () { btn.textContent = 'Copier'; }, 2000);
+        });
+      });
+    });
+  </script>
 {% endblock %}

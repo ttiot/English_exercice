@@ -1,6 +1,7 @@
 {% extends 'base.html' %}
 {% block title %}Créer un compte{% endblock %}
 {% block content %}
+  <div class="auth-page">
   <div class="card auth-card">
     <h2>Créer un compte élève</h2>
     <p class="muted">Remplis ce formulaire pour accéder aux exercices personnalisés.</p>
@@ -25,5 +26,6 @@
       <button class="btn btn-primary" type="submit">Créer mon compte</button>
       <a class="btn btn-secondary" href="{{ url_for('main.login') }}">J'ai déjà un compte</a>
     </form>
+  </div>
   </div>
 {% endblock %}
