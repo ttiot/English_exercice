@@ -20,14 +20,39 @@
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       {% for exercise in session_obj.exercises %}
+        {% set options = exercise.options %}
         <div class="question">
           <h4>Question {{ loop.index }}</h4>
           <p>{{ exercise.prompt }}</p>
-          <textarea
-            name="answer_{{ exercise.id }}"
-            rows="2"
-            placeholder="Ta réponse"
-          ></textarea>
+          {% if exercise.question_type == 'mcq' and options %}
+            <div class="mcq-options">
+              {% for option in options %}
+                <label class="mcq-option">
+                  <input
+                    type="radio"
+                    name="answer_{{ exercise.id }}"
+                    value="{{ option }}"
+                    required
+                  />
+                  <span>{{ option }}</span>
+                </label>
+              {% endfor %}
+            </div>
+          {% else %}
+            {% if exercise.question_type == 'word_bank' and options %}
+              <p class="word-bank">
+                Banque de mots :
+                {% for option in options %}
+                  <span class="word-bank-chip">{{ option }}</span>{% if not loop.last %}{% endif %}
+                {% endfor %}
+              </p>
+            {% endif %}
+            <textarea
+              name="answer_{{ exercise.id }}"
+              rows="2"
+              placeholder="Ta réponse"
+            ></textarea>
+          {% endif %}
         </div>
       {% endfor %}
       <button class="btn btn-primary" type="submit">Terminer la session</button>

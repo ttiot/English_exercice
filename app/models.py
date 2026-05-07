@@ -120,6 +120,19 @@ class SessionExercise(db.Model, TimestampMixin):
         db.Integer, db.ForeignKey("ai_generated_exercises.id"), nullable=True
     )
 
+    @property
+    def options(self) -> list:
+        """Liste affichable des options (QCM/word bank), ou liste vide."""
+        if not self.options_json:
+            return []
+        import json as _json
+
+        try:
+            data = _json.loads(self.options_json)
+            return list(data) if isinstance(data, list) else []
+        except (ValueError, TypeError):
+            return []
+
 
 class PreparedExercise(db.Model, TimestampMixin):
     __tablename__ = "prepared_exercises"

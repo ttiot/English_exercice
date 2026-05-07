@@ -9,6 +9,7 @@ from uuid import uuid4
 from urllib.parse import urlparse, urljoin
 
 import csv
+import json
 import re
 
 from flask import (
@@ -463,31 +464,85 @@ def _prompt_has_blank(prompt: str) -> bool:
     return bool(re.search(r"_{3,}|\\.{3,}|…", prompt))
 
 
-def _is_answer_correct(exercise: SessionExercise) -> bool:
-    base_answer = exercise.correct_answer or ""
-    user_answer = exercise.student_answer or ""
-    strict_expected = _normalize_answer(base_answer, loose=False)
-    strict_actual = _normalize_answer(user_answer, loose=False)
+def _accepted_answers(exercise: SessionExercise) -> List[str]:
+    """Liste des réponses acceptées : `correct_answer` + variantes JSON."""
+    answers: List[str] = []
+    if exercise.correct_answer:
+        answers.append(exercise.correct_answer)
+    raw = getattr(exercise, "accepted_answers_json", None)
+    if raw:
+        try:
+            extra = json.loads(raw)
+            if isinstance(extra, list):
+                answers.extend(str(item) for item in extra if item)
+        except (ValueError, TypeError):
+            pass
+    return answers
 
-    if strict_expected == strict_actual:
-        return True
+
+def _is_answer_correct(exercise: SessionExercise) -> bool:
+    user_answer = exercise.student_answer or ""
+    candidates = _accepted_answers(exercise)
+    if not candidates:
+        return False
+
+    strict_actual = _normalize_answer(user_answer, loose=False)
+    question_type = getattr(exercise, "question_type", "text") or "text"
+
+    # QCM : l'élève a cliqué un bouton, on exige le match exact (case/espaces).
+    if question_type == "mcq":
+        return any(
+            strict_actual == _normalize_answer(answer, loose=False)
+            for answer in candidates
+        )
 
     translation_categories = {
         "translate_en_fr",
         "translate_fr_en",
         "sentence_en_fr",
         "sentence_fr_en",
+        "interrogative_words",
     }
-    if exercise.category in translation_categories:
-        loose_expected = _normalize_answer(base_answer, loose=True)
-        loose_actual = _normalize_answer(user_answer, loose=True)
-        return loose_expected == loose_actual
+    loose_eligible = exercise.category in translation_categories
+    loose_actual = _normalize_answer(user_answer, loose=True) if loose_eligible else None
 
-    if _prompt_has_blank(exercise.prompt):
-        pattern = rf"\b{re.escape(strict_expected)}\b"
-        if re.search(pattern, strict_actual):
+    has_blank = _prompt_has_blank(exercise.prompt)
+
+    for answer in candidates:
+        strict_expected = _normalize_answer(answer, loose=False)
+        if strict_expected == strict_actual:
             return True
+        if loose_eligible:
+            if _normalize_answer(answer, loose=True) == loose_actual:
+                return True
+        if has_blank:
+            pattern = rf"\b{re.escape(strict_expected)}\b"
+            if re.search(pattern, strict_actual):
+                return True
     return False
+
+
+def _session_exercise_kwargs(
+    prompt: ExercisePrompt,
+    *,
+    source: str = "procedural",
+    ai_exercise_id: Optional[int] = None,
+) -> dict:
+    """Convertit un ``ExercisePrompt`` en kwargs pour ``SessionExercise(...)``."""
+    return {
+        "prompt": prompt.prompt,
+        "correct_answer": prompt.answer,
+        "category": prompt.category,
+        "question_type": prompt.question_type,
+        "options_json": json.dumps(list(prompt.options)) if prompt.options else None,
+        "accepted_answers_json": (
+            json.dumps(list(prompt.accepted_answers))
+            if prompt.accepted_answers
+            else None
+        ),
+        "source": source,
+        "ai_exercise_id": ai_exercise_id,
+    }
 
 
 def _quarter_range(year: int, quarter: int) -> Tuple[date, date]:
@@ -1374,6 +1429,7 @@ def start_session(student_id: int):
                         correct_answer=question.answer,
                         category=question.category_code,
                         display_order=index,
+                        source="prepared",
                     )
                 )
             session_obj.total_questions = len(prepared_set.questions)
@@ -1420,10 +1476,8 @@ def start_session(student_id: int):
                 db.session.add(
                     SessionExercise(
                         session_id=session_obj.id,
-                        prompt=exercise.prompt,
-                        correct_answer=exercise.answer,
-                        category=exercise.category,
                         display_order=index,
+                        **_session_exercise_kwargs(exercise, source="procedural"),
                     )
                 )
             session_obj.total_questions = len(exercises)
