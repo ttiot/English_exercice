@@ -26,14 +26,22 @@
           name="student_prompt"
           rows="3"
           maxlength="500"
-          placeholder="Ex : 10 questions sur la nourriture en utilisant les mots interrogatifs what, when, who."
+          placeholder="Ex : la nourriture en utilisant les mots interrogatifs what, when, who."
         ></textarea>
         <p class="form-help">
           L'IA génère des exercices adaptés à ton niveau, conservés pour la prochaine fois.
         </p>
       </div>
       <label for="question_count">Nombre de questions</label>
-      <input id="question_count" name="question_count" type="number" min="5" max="40" value="20" />
+      <select id="question_count" name="question_count">
+        <option value="10">10</option>
+        <option value="15">15</option>
+        <option value="20" selected>20</option>
+        <option value="25">25</option>
+        <option value="30">30</option>
+        <option value="35">35</option>
+        <option value="40">40</option>
+      </select>
 
       <label for="difficulty">Niveau de difficulté</label>
       <select id="difficulty" name="difficulty">
