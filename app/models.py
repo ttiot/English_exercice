@@ -1,4 +1,5 @@
 from datetime import datetime
+from decimal import Decimal
 from typing import Dict, Optional, Sequence
 
 from sqlalchemy import inspect, text
@@ -293,6 +294,269 @@ class StudentSkillProgress(db.Model, TimestampMixin):
 
     student = db.relationship("Student", backref=db.backref("skill_progress", lazy=True))
     category = db.relationship("QuestionCategory", backref=db.backref("skill_progress", lazy=True))
+
+
+class OpenAIConfig(db.Model, TimestampMixin):
+    """Singleton stockant la configuration OpenAI globale modifiable depuis l'admin.
+
+    La clé API est chiffrée avec Fernet (cf. `Config.FERNET_KEY`). Si aucune
+    ligne n'est `is_active=True`, le service IA retombe sur les variables
+    d'environnement `OPENAI_*`.
+    """
+
+    __tablename__ = "openai_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    api_key_encrypted = db.Column(db.Text, nullable=True)
+    base_url = db.Column(
+        db.String(500), nullable=True, default="https://api.openai.com/v1"
+    )
+    default_model = db.Column(db.String(100), nullable=True, default="gpt-4o-mini")
+    source_name = db.Column(db.String(100), nullable=True, default="OpenAI")
+    is_active = db.Column(db.Boolean, default=True, nullable=False)
+    monthly_budget_usd = db.Column(db.Numeric(10, 2), nullable=True)
+
+    def set_api_key(self, api_key: Optional[str]) -> None:
+        """Chiffre et stocke la clé API. Vide / None ⇒ supprime la clé."""
+        if not api_key:
+            self.api_key_encrypted = None
+            return
+
+        from cryptography.fernet import Fernet
+        from flask import current_app
+
+        key = current_app.config.get("FERNET_KEY")
+        if not key:
+            current_app.logger.warning(
+                "FERNET_KEY non définie, la clé OpenAI n'a pas été chiffrée."
+            )
+            return
+
+        if isinstance(key, str):
+            key = key.encode()
+
+        cipher = Fernet(key)
+        self.api_key_encrypted = cipher.encrypt(api_key.encode()).decode()
+
+    def get_api_key(self) -> Optional[str]:
+        """Retourne la clé API en clair, ou None si absente / illisible."""
+        if not self.api_key_encrypted:
+            return None
+
+        from cryptography.fernet import Fernet
+        from flask import current_app
+
+        key = current_app.config.get("FERNET_KEY")
+        if not key:
+            return None
+
+        if isinstance(key, str):
+            key = key.encode()
+
+        try:
+            cipher = Fernet(key)
+            return cipher.decrypt(self.api_key_encrypted.encode()).decode()
+        except Exception:
+            # Clé Fernet rotée → ciphertext illisible. On le signale par None.
+            return None
+
+    @staticmethod
+    def get_active() -> Optional["OpenAIConfig"]:
+        return OpenAIConfig.query.filter_by(is_active=True).first()
+
+    @staticmethod
+    def get_or_create() -> "OpenAIConfig":
+        config = OpenAIConfig.query.first()
+        if not config:
+            config = OpenAIConfig()
+            db.session.add(config)
+            db.session.commit()
+        return config
+
+
+class AICallLog(db.Model):
+    """Audit + base du tracking budget des appels OpenAI."""
+
+    __tablename__ = "ai_call_log"
+
+    id = db.Column(db.Integer, primary_key=True)
+    student_id = db.Column(
+        db.Integer, db.ForeignKey("students.id"), nullable=True, index=True
+    )
+    call_type = db.Column(db.String(50), nullable=False, index=True)
+    model = db.Column(db.String(100), nullable=False)
+    api_key_source = db.Column(db.String(20), nullable=False, default="global")
+
+    system_prompt = db.Column(db.Text, nullable=True)
+    user_prompt = db.Column(db.Text, nullable=True)
+    response_text = db.Column(db.Text, nullable=True)
+    response_status = db.Column(db.String(20), nullable=False, default="success")
+    error_message = db.Column(db.Text, nullable=True)
+
+    input_tokens = db.Column(db.Integer, nullable=True)
+    output_tokens = db.Column(db.Integer, nullable=True)
+    total_tokens = db.Column(db.Integer, nullable=True)
+    estimated_cost_usd = db.Column(db.Numeric(10, 6), nullable=True)
+
+    duration_ms = db.Column(db.Integer, nullable=True)
+    context_json = db.Column(db.Text, nullable=True)
+    created_at = db.Column(
+        db.DateTime, default=datetime.utcnow, nullable=False, index=True
+    )
+
+    student = db.relationship(
+        "Student", backref=db.backref("ai_call_logs", lazy="dynamic")
+    )
+
+    # Tarifs USD par 1k tokens. Mots-clés cherchés en sous-chaîne dans `model`.
+    # À tenir à jour selon https://openai.com/api/pricing/.
+    TOKEN_PRICES = {
+        "gpt-5.2": {"input": 0.005, "output": 0.02},
+        "gpt-5.1": {"input": 0.004, "output": 0.016},
+        "gpt-5-mini": {"input": 0.0003, "output": 0.0012},
+        "gpt-5": {"input": 0.003, "output": 0.012},
+        "gpt-4o-mini": {"input": 0.00015, "output": 0.0006},
+        "gpt-4o": {"input": 0.0025, "output": 0.01},
+        "gpt-4-turbo": {"input": 0.01, "output": 0.03},
+        "gpt-4": {"input": 0.03, "output": 0.06},
+        "gpt-3.5-turbo": {"input": 0.0005, "output": 0.0015},
+        "o1-mini": {"input": 0.003, "output": 0.012},
+        "o1": {"input": 0.015, "output": 0.06},
+    }
+
+    @staticmethod
+    def _calculate_cost(
+        model: str,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+    ) -> Optional[Decimal]:
+        if not model or input_tokens is None or output_tokens is None:
+            return None
+        model_lower = model.lower()
+        prices = None
+        for key, value in AICallLog.TOKEN_PRICES.items():
+            if key in model_lower:
+                prices = value
+                break
+        if not prices:
+            return None
+        input_cost = (input_tokens / 1000) * prices.get("input", 0)
+        output_cost = (output_tokens / 1000) * prices.get("output", 0)
+        return Decimal(str(round(input_cost + output_cost, 6)))
+
+    @staticmethod
+    def log_call(
+        student_id: Optional[int],
+        call_type: str,
+        model: str,
+        api_key_source: str = "global",
+        system_prompt: Optional[str] = None,
+        user_prompt: Optional[str] = None,
+        response_text: Optional[str] = None,
+        response_status: str = "success",
+        error_message: Optional[str] = None,
+        input_tokens: Optional[int] = None,
+        output_tokens: Optional[int] = None,
+        duration_ms: Optional[int] = None,
+        context_json: Optional[str] = None,
+    ) -> "AICallLog":
+        total_tokens = None
+        if input_tokens is not None and output_tokens is not None:
+            total_tokens = input_tokens + output_tokens
+        log = AICallLog(
+            student_id=student_id,
+            call_type=call_type,
+            model=model,
+            api_key_source=api_key_source,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_text=response_text,
+            response_status=response_status,
+            error_message=error_message,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            total_tokens=total_tokens,
+            estimated_cost_usd=AICallLog._calculate_cost(
+                model, input_tokens, output_tokens
+            ),
+            duration_ms=duration_ms,
+            context_json=context_json,
+        )
+        db.session.add(log)
+        return log
+
+    @staticmethod
+    def get_monthly_cost_usd(
+        year: Optional[int] = None, month: Optional[int] = None
+    ) -> Decimal:
+        from sqlalchemy import func, extract
+
+        if year is None or month is None:
+            now = datetime.utcnow()
+            year = now.year
+            month = now.month
+        result = (
+            db.session.query(func.sum(AICallLog.estimated_cost_usd))
+            .filter(
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .scalar()
+        )
+        return Decimal(str(result)) if result else Decimal("0")
+
+    @staticmethod
+    def get_monthly_stats(
+        year: Optional[int] = None, month: Optional[int] = None
+    ) -> dict:
+        from sqlalchemy import func, extract
+
+        if year is None or month is None:
+            now = datetime.utcnow()
+            year = now.year
+            month = now.month
+        totals = (
+            db.session.query(
+                func.count(AICallLog.id).label("calls"),
+                func.sum(AICallLog.input_tokens).label("input_tokens"),
+                func.sum(AICallLog.output_tokens).label("output_tokens"),
+                func.sum(AICallLog.estimated_cost_usd).label("cost"),
+            )
+            .filter(
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .first()
+        )
+        by_type = (
+            db.session.query(
+                AICallLog.call_type,
+                func.count(AICallLog.id).label("calls"),
+                func.sum(AICallLog.estimated_cost_usd).label("cost"),
+            )
+            .filter(
+                extract("year", AICallLog.created_at) == year,
+                extract("month", AICallLog.created_at) == month,
+            )
+            .group_by(AICallLog.call_type)
+            .all()
+        )
+        return {
+            "year": year,
+            "month": month,
+            "calls": totals.calls or 0,
+            "input_tokens": int(totals.input_tokens or 0),
+            "output_tokens": int(totals.output_tokens or 0),
+            "cost_usd": float(totals.cost) if totals.cost else 0.0,
+            "by_type": [
+                {
+                    "type": row.call_type,
+                    "calls": row.calls,
+                    "cost_usd": float(row.cost) if row.cost else 0.0,
+                }
+                for row in by_type
+            ],
+        }
 
 
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
@@ -826,6 +1090,8 @@ __all__ = [
     "ReviewPlan",
     "SkillPrerequisite",
     "StudentSkillProgress",
+    "OpenAIConfig",
+    "AICallLog",
     "ensure_default_badges",
     "ensure_default_categories",
     "ensure_default_prerequisites",
