@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Logs IA{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Logs des appels IA</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_config') }}">← Configuration OpenAI</a> ·
+      <a href="{{ url_for('main.admin_openai_budget') }}">Budget mensuel</a>
+    </p>
+
+    <form method="get" class="inline-form">
+      <select name="status">
+        <option value="">— Tous les statuts —</option>
+        <option value="success" {% if status == 'success' %}selected{% endif %}>success</option>
+        <option value="error" {% if status == 'error' %}selected{% endif %}>error</option>
+      </select>
+      <input
+        type="text"
+        name="call_type"
+        value="{{ call_type or '' }}"
+        placeholder="call_type (ex: generate_exercises)"
+      />
+      <button class="btn btn-secondary" type="submit">Filtrer</button>
+    </form>
+
+    <p class="muted">{{ total }} log(s) — page {{ page }}</p>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Date (UTC)</th>
+          <th>Élève</th>
+          <th>Type</th>
+          <th>Modèle</th>
+          <th>Tokens (in/out)</th>
+          <th>Coût USD</th>
+          <th>Durée</th>
+          <th>Statut</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for log in logs %}
+          <tr>
+            <td>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</td>
+            <td>
+              {% if log.student_id and student_lookup.get(log.student_id) %}
+                {{ student_lookup[log.student_id].full_name() }}
+              {% else %}
+                <span class="muted">—</span>
+              {% endif %}
+            </td>
+            <td>{{ log.call_type }}</td>
+            <td>{{ log.model }}</td>
+            <td>{{ log.input_tokens or 0 }} / {{ log.output_tokens or 0 }}</td>
+            <td>{{ '%.4f'|format(log.estimated_cost_usd|float) if log.estimated_cost_usd else '—' }}</td>
+            <td>{{ log.duration_ms or '—' }} ms</td>
+            <td>
+              <span class="badge badge-{{ 'success' if log.response_status == 'success' else 'danger' }}">
+                {{ log.response_status }}
+              </span>
+            </td>
+            <td>
+              <a href="{{ url_for('main.admin_openai_log_detail', log_id=log.id) }}">Détail</a>
+            </td>
+          </tr>
+        {% else %}
+          <tr><td colspan="9" class="muted">Aucun log.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+
+    {% if total > per_page %}
+      <div class="actions">
+        {% if page > 1 %}
+          <a class="btn btn-secondary" href="?page={{ page - 1 }}&status={{ status }}&call_type={{ call_type }}">← Précédent</a>
+        {% endif %}
+        {% if page * per_page < total %}
+          <a class="btn btn-secondary" href="?page={{ page + 1 }}&status={{ status }}&call_type={{ call_type }}">Suivant →</a>
+        {% endif %}
+      </div>
+    {% endif %}
+  </div>
+{% endblock %}

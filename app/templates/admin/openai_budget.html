@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Budget IA{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Budget OpenAI</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_config') }}">← Configuration OpenAI</a> ·
+      <a href="{{ url_for('main.admin_openai_logs') }}">Logs IA</a>
+    </p>
+
+    {% if budget %}
+      <h3>Mois en cours</h3>
+      <p>Budget configuré : <strong>{{ '%.2f'|format(budget) }} USD</strong></p>
+      <p>Dépensé : <strong>{{ '%.4f'|format(spent) }} USD</strong></p>
+      <div class="progress-bar" aria-label="Consommation du budget">
+        <div
+          class="progress-bar-fill {% if ratio and ratio >= 100 %}progress-over{% endif %}"
+          style="width: {{ [ratio, 100]|min if ratio else 0 }}%"
+        ></div>
+      </div>
+      <p class="muted">{{ '%.1f'|format(ratio or 0) }}% utilisé ce mois-ci.</p>
+    {% else %}
+      <p class="muted">Aucun budget mensuel configuré (cf. page de configuration).</p>
+    {% endif %}
+
+    <h3>Historique (3 derniers mois)</h3>
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Mois</th>
+          <th>Appels</th>
+          <th>Tokens (in / out)</th>
+          <th>Coût USD</th>
+          <th>Par type</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for m in months %}
+          <tr>
+            <td>{{ '%04d-%02d'|format(m.year, m.month) }}</td>
+            <td>{{ m.calls }}</td>
+            <td>{{ m.input_tokens }} / {{ m.output_tokens }}</td>
+            <td>{{ '%.4f'|format(m.cost_usd) }}</td>
+            <td>
+              {% for entry in m.by_type %}
+                <div>{{ entry.type }} : {{ entry.calls }} ({{ '%.4f'|format(entry.cost_usd) }} USD)</div>
+              {% else %}
+                <span class="muted">—</span>
+              {% endfor %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+{% endblock %}

@@ -1,0 +1,39 @@
+{% extends 'base.html' %}
+{% block title %}Détail log IA #{{ log.id }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Log IA #{{ log.id }}</h2>
+    <p class="muted">
+      <a href="{{ url_for('main.admin_openai_logs') }}">← Tous les logs</a>
+    </p>
+
+    <dl class="meta-list">
+      <dt>Date (UTC)</dt><dd>{{ log.created_at.strftime('%Y-%m-%d %H:%M:%S') }}</dd>
+      <dt>Type</dt><dd>{{ log.call_type }}</dd>
+      <dt>Modèle</dt><dd>{{ log.model }}</dd>
+      <dt>Source clé</dt><dd>{{ log.api_key_source }}</dd>
+      <dt>Élève</dt><dd>{{ student.full_name() if student else '—' }}</dd>
+      <dt>Tokens</dt><dd>in {{ log.input_tokens or 0 }} / out {{ log.output_tokens or 0 }} ({{ log.total_tokens or 0 }} total)</dd>
+      <dt>Coût estimé</dt><dd>{{ '%.6f'|format(log.estimated_cost_usd|float) if log.estimated_cost_usd else '—' }} USD</dd>
+      <dt>Durée</dt><dd>{{ log.duration_ms or '—' }} ms</dd>
+      <dt>Statut</dt><dd>{{ log.response_status }}</dd>
+      {% if log.error_message %}
+        <dt>Erreur</dt><dd><pre>{{ log.error_message }}</pre></dd>
+      {% endif %}
+    </dl>
+
+    <h3>Prompt système</h3>
+    <pre class="prompt-block">{{ log.system_prompt or '' }}</pre>
+
+    <h3>Prompt utilisateur</h3>
+    <pre class="prompt-block">{{ log.user_prompt or '' }}</pre>
+
+    <h3>Réponse</h3>
+    <pre class="prompt-block">{{ log.response_text or '' }}</pre>
+
+    {% if log.context_json %}
+      <h3>Contexte</h3>
+      <pre class="prompt-block">{{ log.context_json }}</pre>
+    {% endif %}
+  </div>
+{% endblock %}
