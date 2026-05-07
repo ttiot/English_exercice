@@ -2184,6 +2184,54 @@ def add_exercise_item():
     return redirect(url_for("main.exercise_bank"))
 
 
+@bp.route("/exercise-bank/ai")
+@_parent_required
+def ai_exercise_pool():
+    from sqlalchemy import desc
+
+    page = max(int(request.args.get("page", 1) or 1), 1)
+    per_page = 25
+    show_disabled = request.args.get("disabled") == "1"
+
+    query = AIGeneratedExercise.query
+    if not show_disabled:
+        query = query.filter(AIGeneratedExercise.is_disabled.is_(False))
+    query = query.order_by(desc(AIGeneratedExercise.created_at))
+
+    total = query.count()
+    items = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    student_lookup = {
+        s.id: s
+        for s in Student.query.filter(
+            Student.id.in_({i.student_id for i in items if i.student_id})
+        ).all()
+    }
+
+    return render_template(
+        "ai_pool.html",
+        items=items,
+        student_lookup=student_lookup,
+        page=page,
+        per_page=per_page,
+        total=total,
+        show_disabled=show_disabled,
+    )
+
+
+@bp.route("/exercise-bank/ai/<int:item_id>/toggle", methods=["POST"])
+@_parent_required
+def toggle_ai_exercise(item_id: int):
+    item = AIGeneratedExercise.query.get_or_404(item_id)
+    item.is_disabled = not item.is_disabled
+    db.session.commit()
+    flash(
+        "Exercice IA désactivé." if item.is_disabled else "Exercice IA réactivé.",
+        "info",
+    )
+    return redirect(url_for("main.ai_exercise_pool"))
+
+
 @bp.route("/exercise-bank/items/<int:item_id>/delete", methods=["POST"])
 @_parent_required
 def delete_exercise_item(item_id: int):
