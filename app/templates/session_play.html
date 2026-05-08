@@ -1,5 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}Session d'exercices{% endblock %}
+{% block extra_head %}
+  <meta name="csrf-token" content="{{ csrf_token() }}" />
+{% endblock %}
 {% block content %}
   <div class="card">
     <h2>Session d'entraînement pour {{ student.full_name() }}</h2>
@@ -17,7 +20,8 @@
       {% set seconds = time_limit % 60 %}
       <p class="timer">Temps restant : <span id="timer" data-seconds="{{ time_limit }}">{{ minutes }} min {{ seconds }} s</span></p>
     {% endif %}
-    <form method="post">
+    <p id="autosave-status" style="font-size:0.8rem; color: var(--accent-cyan); min-height:1.2em;"></p>
+    <form method="post" id="session-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       {% for exercise in session_obj.exercises %}
         {% set options = exercise.options %}
@@ -33,6 +37,7 @@
                     type="radio"
                     name="answer_{{ exercise.id }}"
                     value="{{ option }}"
+                    {% if exercise.student_answer == option %}checked{% endif %}
                     required
                   />
                   <span>{{ option }}</span>
@@ -52,7 +57,7 @@
               name="answer_{{ exercise.id }}"
               rows="2"
               placeholder="Ta réponse"
-            ></textarea>
+            >{{ exercise.student_answer or '' }}</textarea>
           {% endif %}
         </div>
       {% endfor %}
@@ -62,6 +67,64 @@
 {% endblock %}
 {% block scripts %}
   {{ super() }}
+  <script>
+    (function () {
+      const AUTOSAVE_URL = "{{ url_for('main.autosave_session', session_id=session_obj.id) }}";
+      const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      const statusEl = document.getElementById('autosave-status');
+      const form = document.getElementById('session-form');
+      let debounceTimer = null;
+
+      function collectAnswers() {
+        const data = {};
+        const fd = new FormData(form);
+        for (const [key, value] of fd.entries()) {
+          if (key.startsWith('answer_')) {
+            data[key] = value;
+          }
+        }
+        return data;
+      }
+
+      function saveAnswers() {
+        statusEl.style.color = 'var(--accent-cyan)';
+        statusEl.textContent = 'Sauvegarde…';
+        fetch(AUTOSAVE_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-CSRFToken': CSRF_TOKEN,
+          },
+          body: JSON.stringify(collectAnswers()),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (data) {
+            if (data.ok) {
+              statusEl.style.color = 'var(--accent-green)';
+              statusEl.textContent = 'Sauvegardé ✓';
+              setTimeout(function () { statusEl.textContent = ''; }, 2000);
+            }
+          })
+          .catch(function () {
+            statusEl.style.color = 'var(--accent-red, #e05252)';
+            statusEl.textContent = 'Erreur de sauvegarde';
+          });
+      }
+
+      function scheduleSave() {
+        clearTimeout(debounceTimer);
+        debounceTimer = setTimeout(saveAnswers, 2000);
+      }
+
+      form.addEventListener('input', scheduleSave);
+      form.addEventListener('change', scheduleSave);
+
+      window.addEventListener('beforeunload', function () {
+        clearTimeout(debounceTimer);
+        saveAnswers();
+      });
+    })();
+  </script>
   {% if time_limit %}
     <script>
       const timerElement = document.getElementById('timer');
