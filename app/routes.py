@@ -372,6 +372,7 @@ def _compute_weekly_progress(student: Student, week_start: date) -> Dict[str, fl
     sessions = (
         PracticeSession.query.filter(
             PracticeSession.student_id == student.id,
+            PracticeSession.completed_at.isnot(None),
             PracticeSession.started_at >= datetime.combine(week_start, datetime.min.time()),
             PracticeSession.started_at <= datetime.combine(week_end, datetime.max.time()),
         )
@@ -1252,6 +1253,15 @@ def view_student(student_id: int):
     xp_data = _compute_xp_and_level(sessions)
     global_streak = _compute_global_streak(sessions)
     activity_heatmap = _compute_activity_heatmap(sessions)
+    resume_session = (
+        PracticeSession.query.filter(
+            PracticeSession.student_id == student.id,
+            PracticeSession.completed_at.is_(None),
+            PracticeSession.started_at >= datetime.utcnow() - timedelta(days=7),
+        )
+        .order_by(PracticeSession.started_at.desc())
+        .first()
+    )
 
     return render_template(
         "student_detail.html",
@@ -1273,6 +1283,7 @@ def view_student(student_id: int):
         xp_data=xp_data,
         global_streak=global_streak,
         activity_heatmap=activity_heatmap,
+        resume_session=resume_session,
     )
 
 
@@ -1732,6 +1743,28 @@ def play_session(session_id: int):
         session_type_labels=SESSION_TYPE_LABELS,
         category_lookup=category_lookup,
     )
+
+
+@bp.route("/sessions/<int:session_id>/autosave", methods=["POST"])
+@_login_required
+def autosave_session(session_id: int):
+    session_obj = PracticeSession.query.get_or_404(session_id)
+    student = session_obj.student
+    if not student:
+        abort(404)
+    user = _current_user()
+    if not (user.id == student.id or user.is_parent() or user.is_admin()):
+        abort(403)
+    if session_obj.completed_at:
+        return {"ok": False, "error": "Session déjà terminée"}, 400
+    data = request.get_json(silent=True) or {}
+    for exercise in session_obj.exercises:
+        key = f"answer_{exercise.id}"
+        if key in data:
+            raw = str(data[key]).strip()
+            exercise.student_answer = raw[:255] if raw else None
+    db.session.commit()
+    return {"ok": True}
 
 
 @bp.route("/sessions/<int:session_id>/summary")

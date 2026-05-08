@@ -2,6 +2,13 @@
 {% block title %}Profil de {{ student.full_name() }}{% endblock %}
 {% block content %}
 
+{% if resume_session %}
+<div class="alert alert-warning" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
+  <span>⏸️ <strong>Session en cours</strong> — tu as une session non terminée commencée le {{ resume_session.started_at.strftime('%d/%m à %H:%M') }}.</span>
+  <a class="btn btn-warning" href="{{ url_for('main.play_session', session_id=resume_session.id) }}" style="margin-left:auto;">▶ Reprendre</a>
+</div>
+{% endif %}
+
 {# ── HERO ─────────────────────────────────────────────────────────────────── #}
 <div class="card profile-hero">
   <div class="profile-hero__left">
