@@ -518,6 +518,13 @@ def _normalize_answer(value: str, loose: bool = False) -> str:
     return normalized
 
 
+_ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+")
+
+
+def _strip_article(text: str) -> str:
+    return _ARTICLE_RE.sub("", text)
+
+
 def _prompt_has_blank(prompt: str) -> bool:
     if not prompt:
         return False
@@ -579,6 +586,21 @@ def _is_answer_correct(exercise: SessionExercise) -> bool:
             pattern = rf"\b{re.escape(strict_expected)}\b"
             if re.search(pattern, strict_actual):
                 return True
+
+    # Tolérance articles : "a dress" ≅ "dress", "an apple" ≅ "apple"
+    if question_type != "mcq":
+        stripped_actual = _strip_article(strict_actual)
+        if stripped_actual:
+            for answer in candidates:
+                stripped_expected = _strip_article(_normalize_answer(answer, loose=False))
+                if stripped_actual == stripped_expected:
+                    return True
+                if loose_eligible and loose_actual is not None:
+                    if _strip_article(loose_actual) == _strip_article(
+                        _normalize_answer(answer, loose=True)
+                    ):
+                        return True
+
     return False
 
 
@@ -2465,6 +2487,43 @@ def delete_session(session_id: int):
         return redirect(next_url)
 
     return redirect(url_for("main.view_student", student_id=student_id))
+
+
+@bp.route(
+    "/parents/sessions/<int:session_id>/exercises/<int:exercise_id>/toggle-correct",
+    methods=["POST"],
+)
+@_parent_required
+def toggle_exercise_correct(session_id: int, exercise_id: int):
+    session_obj = PracticeSession.query.get_or_404(session_id)
+    exercise = SessionExercise.query.get_or_404(exercise_id)
+    if exercise.session_id != session_id:
+        abort(404)
+
+    was_correct = exercise.is_correct
+    exercise.is_correct = not was_correct
+
+    session_obj.correct_answers = sum(1 for ex in session_obj.exercises if ex.is_correct)
+
+    category = QuestionCategory.query.filter_by(code=exercise.category).first()
+    if category:
+        progress = StudentSkillProgress.query.filter_by(
+            student_id=session_obj.student_id,
+            category_id=category.id,
+        ).first()
+        if progress:
+            delta = 1 if not was_correct else -1
+            progress.correct_attempts = max(0, (progress.correct_attempts or 0) + delta)
+            progress.mastery = (
+                (progress.correct_attempts / progress.total_attempts) * 100
+                if progress.total_attempts
+                else 0.0
+            )
+
+    db.session.commit()
+    action = "correcte" if exercise.is_correct else "incorrecte"
+    flash(f"Réponse marquée comme {action}.", "success")
+    return redirect(url_for("main.session_summary", session_id=session_id))
 
 
 @bp.route("/admin/users/<int:user_id>/role", methods=["POST"])
