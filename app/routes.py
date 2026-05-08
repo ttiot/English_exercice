@@ -1719,6 +1719,9 @@ def play_session(session_id: int):
             if instruction_language == "fr"
             else "Answer each question without help and check your spelling."
         )
+    category_lookup = {
+        cat.code: cat.name for cat in QuestionCategory.query.all()
+    }
     return render_template(
         "session_play.html",
         session_obj=session_obj,
@@ -1727,6 +1730,7 @@ def play_session(session_id: int):
         difficulty_labels=DIFFICULTY_DISPLAY,
         instructions=instructions,
         session_type_labels=SESSION_TYPE_LABELS,
+        category_lookup=category_lookup,
     )
 
 
