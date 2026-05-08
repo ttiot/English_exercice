@@ -102,6 +102,14 @@
         <span class="correction-item__num">Q{{ loop.index }}</span>
         <span class="correction-item__cat muted">{{ category_lookup.get(exercise.category, exercise.category|replace('_',' ')|capitalize) }}</span>
         <span class="correction-item__result">{% if exercise.is_correct %}✅ Bravo !{% else %}❌ À retravailler{% endif %}</span>
+        {% if current_user and (current_user.is_parent() or current_user.is_admin()) %}
+        <form method="post" action="{{ url_for('main.toggle_exercise_correct', session_id=session_obj.id, exercise_id=exercise.id) }}" style="margin-left:0.5rem;">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn-small {% if exercise.is_correct %}btn-danger{% else %}btn-secondary{% endif %}" style="font-size:0.75rem; padding:0.2rem 0.7rem; border-radius:6px;">
+            {% if exercise.is_correct %}Marquer faux{% else %}Marquer correct{% endif %}
+          </button>
+        </form>
+        {% endif %}
       </div>
       <p class="correction-item__prompt">{{ exercise.prompt }}</p>
       <div class="correction-item__answers">
