@@ -1,47 +1,145 @@
 {% extends 'base.html' %}
 {% block title %}Résultats de la session{% endblock %}
 {% block content %}
-  <div class="card">
-    <h2>Résultats de la session</h2>
-    <p>
-      Score : <strong>{{ session_obj.correct_answers }}/{{ session_obj.total_questions }}</strong>
-      ({{ '%.0f'|format(session_obj.completion_rate()) }}%)
-    </p>
-    <p>
-      Mode :
-      <strong>{{ session_type_labels.get(session_obj.session_type, session_obj.session_type|title) }}</strong>
-    </p>
-    {% if session_obj.session_type == 'control' and session_obj.total_questions %}
-      {% set grade = (session_obj.correct_answers / session_obj.total_questions * 20) %}
-      <p>Note simulée : <strong>{{ '%.1f'|format(grade) }}/20</strong></p>
-    {% endif %}
-    <p>
-      Niveau :
-      <strong>
-        {{ difficulty_labels.get(session_obj.difficulty or 'beginner', (session_obj.difficulty or 'beginner')|replace('_', ' ')|title) }}
-      </strong>
-    </p>
-    <p>Complétée le {{ session_obj.completed_at.strftime('%d/%m/%Y %H:%M') if session_obj.completed_at else 'en cours' }}</p>
-    <a class="btn btn-primary" href="{{ url_for('main.view_student', student_id=session_obj.student_id) }}">Retour au profil</a>
+
+{# ── OVERLAY DE RÉCOMPENSE ────────────────────────────────────────────────── #}
+{% if last_reward %}
+  <div class="reward-overlay" id="rewardOverlay">
+    {# Confettis générés en CSS #}
+    {% for i in range(20) %}
+      <div class="confetti confetti-{{ loop.index }}"></div>
+    {% endfor %}
+
+    <div class="reward-card">
+      <div class="reward-title">Mission accomplie ! 🎉</div>
+
+      <div class="reward-score" id="rewardScore">0%</div>
+      <p class="muted reward-subtitle">
+        {{ session_obj.correct_answers }}/{{ session_obj.total_questions }} bonnes réponses
+      </p>
+
+      <div class="reward-xp">
+        +{{ last_reward.xp_gained }} XP
+      </div>
+
+      {% if last_reward.new_badge_names %}
+        <div class="reward-badges">
+          {% for name in last_reward.new_badge_names %}
+            <div class="reward-badge-item">
+              🏅 Badge débloqué : <strong>{{ name }}</strong>
+            </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+      <button class="btn btn-primary reward-close" onclick="closeReward()">Voir la correction →</button>
+    </div>
+  </div>
+{% endif %}
+
+{# ── RÉSUMÉ DE SESSION ────────────────────────────────────────────────────── #}
+<div class="card" id="summaryCard">
+  <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:1rem;">
+    <div>
+      <h2 style="margin:0 0 0.5rem;">Résultats de la session</h2>
+      <p class="muted" style="margin:0;">
+        {{ session_type_labels.get(session_obj.session_type, session_obj.session_type|title) }} ·
+        {{ difficulty_labels.get(session_obj.difficulty or 'beginner', (session_obj.difficulty or 'beginner')|replace('_',' ')|title) }} ·
+        {{ session_obj.completed_at.strftime('%d/%m/%Y %H:%M') if session_obj.completed_at else 'en cours' }}
+      </p>
+    </div>
+    <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=session_obj.student_id) }}">← Retour au profil</a>
   </div>
 
-  <div class="card">
-    <h3>Correction</h3>
-    {% for exercise in session_obj.exercises %}
-      <div class="question">
-        <h4>Question {{ loop.index }}</h4>
-        <p>{{ exercise.prompt }}</p>
-        <p class="muted">
-          Catégorie : {{ category_lookup.get(exercise.category, exercise.category|replace('_', ' ')|capitalize) }}
-        </p>
-        <p>Ta réponse : <strong>{{ exercise.student_answer or 'Non renseignée' }}</strong></p>
-        <p>Bonne réponse : <strong>{{ exercise.correct_answer }}</strong></p>
-        {% if exercise.is_correct %}
-          <span class="badge">✅ Bravo !</span>
-        {% else %}
-          <span class="badge" style="background-color: rgba(214,69,69,0.15); color: var(--danger);">À retravailler</span>
+  <div class="session-score-block">
+    {% set pct = session_obj.completion_rate()|int %}
+    {% set score_color = '#2ed573' if pct >= 80 else ('#ffa502' if pct >= 50 else '#ff4757') %}
+    <div class="session-score-ring">
+      <svg viewBox="0 0 120 120">
+        <circle class="skill-ring__track" cx="60" cy="60" r="50" stroke-width="8"/>
+        <circle class="skill-ring__fill" cx="60" cy="60" r="50" stroke-width="8"
+          stroke="{{ score_color }}"
+          stroke-dasharray="{{ (pct * 314.2 / 100)|round(1) }} 314.2"
+          transform="rotate(-90 60 60)"
+        />
+      </svg>
+      <div class="session-score-ring__label">
+        <span style="font-size:2rem; font-weight:700; color:{{ score_color }};">{{ pct }}%</span>
+        <span class="muted" style="font-size:0.85rem;">{{ session_obj.correct_answers }}/{{ session_obj.total_questions }}</span>
+      </div>
+    </div>
+
+    <div class="session-score-meta">
+      {% if session_obj.session_type == 'control' and session_obj.total_questions %}
+        {% set grade = (session_obj.correct_answers / session_obj.total_questions * 20) %}
+        <div class="kpi-tile" style="min-width:0;">
+          <span class="kpi-value" style="color:{{ score_color }};">{{ '%.1f'|format(grade) }}/20</span>
+          <span class="kpi-label">note simulée</span>
+        </div>
+      {% endif %}
+      {% if session_obj.duration_seconds %}
+        <div class="kpi-tile" style="min-width:0;">
+          <span class="kpi-value" style="color:var(--accent-cyan);">{{ (session_obj.duration_seconds // 60) }}:{{ '%02d'|format(session_obj.duration_seconds % 60) }}</span>
+          <span class="kpi-label">durée</span>
+        </div>
+      {% endif %}
+      {% if last_reward %}
+        <div class="kpi-tile" style="min-width:0;">
+          <span class="kpi-value" style="color:var(--accent-warning);">+{{ last_reward.xp_gained }}</span>
+          <span class="kpi-label">XP gagnés</span>
+        </div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ── CORRECTION ───────────────────────────────────────────────────────────── #}
+<div class="card">
+  <h3 class="section-title">📝 Correction détaillée</h3>
+  {% for exercise in session_obj.exercises %}
+    <div class="correction-item {% if exercise.is_correct %}correction-item--ok{% else %}correction-item--nok{% endif %}">
+      <div class="correction-item__header">
+        <span class="correction-item__num">Q{{ loop.index }}</span>
+        <span class="correction-item__cat muted">{{ category_lookup.get(exercise.category, exercise.category|replace('_',' ')|capitalize) }}</span>
+        <span class="correction-item__result">{% if exercise.is_correct %}✅ Bravo !{% else %}❌ À retravailler{% endif %}</span>
+      </div>
+      <p class="correction-item__prompt">{{ exercise.prompt }}</p>
+      <div class="correction-item__answers">
+        <span class="correction-answer {% if not exercise.is_correct %}correction-answer--wrong{% endif %}">
+          Ta réponse : <strong>{{ exercise.student_answer or 'Non renseignée' }}</strong>
+        </span>
+        {% if not exercise.is_correct %}
+          <span class="correction-answer correction-answer--correct">
+            Bonne réponse : <strong>{{ exercise.correct_answer }}</strong>
+          </span>
         {% endif %}
       </div>
-    {% endfor %}
-  </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+{% if last_reward %}
+<script>
+  (function () {
+    const target = {{ session_obj.completion_rate()|int }};
+    const el = document.getElementById('rewardScore');
+    let current = 0;
+    const step = Math.max(1, Math.round(target / 40));
+    const timer = setInterval(function () {
+      current = Math.min(current + step, target);
+      el.textContent = current + '%';
+      if (current >= target) clearInterval(timer);
+    }, 30);
+  })();
+
+  function closeReward() {
+    const overlay = document.getElementById('rewardOverlay');
+    overlay.style.animation = 'reward-out 0.3s ease forwards';
+    setTimeout(function () { overlay.style.display = 'none'; }, 300);
+  }
+</script>
+{% endif %}
 {% endblock %}

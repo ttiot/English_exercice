@@ -1,4 +1,4 @@
-from collections import defaultdict
+from collections import Counter, defaultdict
 import calendar
 from datetime import date, datetime, timedelta
 from functools import wraps
@@ -100,6 +100,15 @@ SESSION_TYPE_LABELS = {
     "prepared": "Parcours préparé",
     "ai_custom": "Prompt libre (IA)",
 }
+
+DIFFICULTY_XP = {"beginner": 10, "intermediate": 20, "advanced": 35}
+LEVEL_TITLES = [
+    (0, "Novice"),
+    (5, "Explorateur"),
+    (9, "Aventurier"),
+    (13, "Expert"),
+    (17, "Maître"),
+]
 
 
 def is_safe_url(target):
@@ -385,6 +394,51 @@ def _select_instruction_language(student: Student) -> str:
     if student.target_cefr_level and student.target_cefr_level.upper() == "A2":
         return "en"
     return "fr"
+
+
+def _compute_xp_and_level(sessions: list) -> dict:
+    xp = sum(
+        (s.correct_answers or 0) * DIFFICULTY_XP.get(s.difficulty or "beginner", 10)
+        for s in sessions if s.completed_at
+    )
+    level = min(20, int((xp / 50) ** 0.5) + 1)
+    xp_for_level = (level - 1) ** 2 * 50
+    xp_for_next = level ** 2 * 50
+    xp_progress_pct = int((xp - xp_for_level) / max(1, xp_for_next - xp_for_level) * 100)
+    title = next(t for lvl, t in reversed(LEVEL_TITLES) if level >= lvl)
+    return {
+        "xp": xp,
+        "level": level,
+        "title": title,
+        "xp_progress_pct": min(100, xp_progress_pct),
+        "xp_for_next": xp_for_next,
+    }
+
+
+def _compute_global_streak(sessions: list) -> int:
+    completed_dates = {s.started_at.date() for s in sessions if s.completed_at and s.started_at}
+    if not completed_dates:
+        return 0
+    streak = 0
+    check_date = date.today()
+    while check_date in completed_dates:
+        streak += 1
+        check_date -= timedelta(days=1)
+    return streak
+
+
+def _compute_activity_heatmap(sessions: list) -> list:
+    counts: dict = {}
+    for s in sessions:
+        if s.completed_at and s.started_at:
+            d = s.started_at.date().isoformat()
+            counts[d] = counts.get(d, 0) + 1
+    today = date.today()
+    return [
+        {"date": (today - timedelta(days=i)).isoformat(),
+         "count": counts.get((today - timedelta(days=i)).isoformat(), 0)}
+        for i in range(34, -1, -1)
+    ]
 
 
 def _award_badges(student_id: int) -> None:
@@ -1176,15 +1230,28 @@ def view_student(student_id: int):
     earned_badge_ids = {
         item.badge_id for item in StudentBadge.query.filter_by(student_id=student.id).all()
     }
-    badge_status = [
-        {
+    badge_status = []
+    for badge in badges:
+        earned = badge.id in earned_badge_ids
+        prog = progress_map.get(badge.category_id) if badge.category_id else None
+        current_mastery = prog.mastery if prog else 0.0
+        current_streak = prog.correct_streak if prog else 0
+        mastery_pct = min(100, int(current_mastery / max(0.01, badge.min_mastery) * 100)) if not earned else 100
+        badge_status.append({
             "badge": badge,
-            "earned": badge.id in earned_badge_ids,
-        }
-        for badge in badges
-    ]
+            "earned": earned,
+            "current_mastery": round(current_mastery, 1),
+            "mastery_pct": mastery_pct,
+            "current_streak": current_streak,
+            "streak_done": current_streak >= badge.min_streak,
+        })
+    badge_status.sort(key=lambda b: (0 if b["earned"] else 1, -b["mastery_pct"]))
+
     theme_summary = _student_theme_summary(student.id) if parent_ok else []
     recurring_errors = _student_recurring_errors(student.id) if parent_ok else []
+    xp_data = _compute_xp_and_level(sessions)
+    global_streak = _compute_global_streak(sessions)
+    activity_heatmap = _compute_activity_heatmap(sessions)
 
     return render_template(
         "student_detail.html",
@@ -1203,6 +1270,9 @@ def view_student(student_id: int):
         badge_status=badge_status,
         theme_summary=theme_summary,
         recurring_errors=recurring_errors,
+        xp_data=xp_data,
+        global_streak=global_streak,
+        activity_heatmap=activity_heatmap,
     )
 
 
@@ -1613,10 +1683,28 @@ def play_session(session_id: int):
                 (session_obj.completed_at - session_obj.started_at).total_seconds()
             )
         _update_progress_from_session(session_obj)
+        existing_badge_ids = {
+            sb.badge_id
+            for sb in StudentBadge.query.filter_by(student_id=session_obj.student_id).all()
+        }
         _award_badges(session_obj.student_id)
         _update_review_plan(session_obj)
         db.session.commit()
 
+        if existing_badge_ids:
+            new_sbs = StudentBadge.query.filter(
+                StudentBadge.student_id == session_obj.student_id,
+                StudentBadge.badge_id.notin_(existing_badge_ids),
+            ).all()
+        else:
+            new_sbs = StudentBadge.query.filter_by(student_id=session_obj.student_id).all()
+        xp_gained = (session_obj.correct_answers or 0) * DIFFICULTY_XP.get(
+            session_obj.difficulty or "beginner", 10
+        )
+        session["last_reward"] = {
+            "xp_gained": xp_gained,
+            "new_badge_names": [sb.badge.name for sb in new_sbs],
+        }
         flash("Session terminée ! Voici ton score.", "success")
         return redirect(url_for("main.session_summary", session_id=session_obj.id))
 
@@ -1658,12 +1746,14 @@ def session_summary(session_id: int):
     category_lookup = {
         category.code: category.name for category in QuestionCategory.query.all()
     }
+    last_reward = session.pop("last_reward", None)
     return render_template(
         "session_summary.html",
         session_obj=session_obj,
         category_lookup=category_lookup,
         difficulty_labels=DIFFICULTY_DISPLAY,
         session_type_labels=SESSION_TYPE_LABELS,
+        last_reward=last_reward,
     )
 
 
