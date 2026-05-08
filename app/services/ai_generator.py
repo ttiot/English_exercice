@@ -63,7 +63,12 @@ EXERCISE_BATCH_SCHEMA = {
                     },
                     "answer": {
                         "type": "string",
-                        "description": "Réponse attendue exacte.",
+                        "description": (
+                            "Réponse attendue exacte. "
+                            "Pour translate_fr_en/sentence_fr_en : traduction anglaise de la phrase donnée. "
+                            "Pour translate_en_fr/sentence_en_fr : traduction française de la phrase donnée. "
+                            "Pour les autres catégories : réponse en anglais."
+                        ),
                     },
                     "category": {
                         "type": "string",
@@ -105,9 +110,15 @@ EXCLUSIVEMENT par un JSON conforme au schéma fourni.
 Règles à respecter :
 - Les énoncés ("prompt") sont rédigés en français. Les mots ou phrases en \
 anglais à manipuler peuvent y figurer entre guillemets.
-- Les réponses ("answer") sont en anglais sauf pour une demande explicite \
-de traduction de l'anglais vers le français (ex. catégories \
-`translate_en_fr`, `sentence_en_fr`).
+- Pour `translate_fr_en` et `sentence_fr_en` : l'énoncé ("prompt") contient \
+uniquement la phrase française à traduire, au format \
+"Traduis en anglais : '...'". La réponse ("answer") est obligatoirement la \
+traduction anglaise. Ne jamais inclure la traduction dans l'énoncé.
+- Pour `translate_en_fr` et `sentence_en_fr` : l'énoncé ("prompt") contient \
+uniquement la phrase anglaise à traduire, au format \
+"Traduis en français : '...'". La réponse ("answer") est obligatoirement la \
+traduction française. Ne jamais inclure la traduction dans l'énoncé.
+- Pour toutes les autres catégories : la réponse ("answer") est en anglais.
 - Vocabulaire et grammaire adaptés au niveau {difficulty}.
 - Pour `question_type='mcq'` : 4 ou 5 options dont la bonne réponse, qui \
 doit aussi figurer dans `options`.

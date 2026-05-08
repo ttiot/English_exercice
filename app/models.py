@@ -1189,10 +1189,19 @@ def ensure_default_prompts() -> None:
     (un admin peut avoir édité le contenu)."""
     from .services.ai_generator import _DEFAULT_PROMPTS
 
+    _OUTDATED_SENTINELS = {
+        "generate_exercises": "sauf pour une demande explicite de traduction de l'anglais vers le français",
+    }
+
     existing_keys = {p.prompt_key for p in OpenAIPrompt.query.all()}
     created = False
     for key, defaults in _DEFAULT_PROMPTS.items():
         if key in existing_keys:
+            existing = OpenAIPrompt.query.filter_by(prompt_key=key).first()
+            sentinel = _OUTDATED_SENTINELS.get(key)
+            if existing and sentinel and sentinel in (existing.system_prompt or ""):
+                existing.system_prompt = defaults["system_prompt"]
+                created = True
             continue
         db.session.add(
             OpenAIPrompt(

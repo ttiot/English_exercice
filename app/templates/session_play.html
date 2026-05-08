@@ -23,6 +23,7 @@
         {% set options = exercise.options %}
         <div class="question">
           <h4>Question {{ loop.index }}</h4>
+          <span class="muted" style="font-size:0.85em;">{{ category_lookup.get(exercise.category, exercise.category|replace('_',' ')|capitalize) }}</span>
           <p>{{ exercise.prompt }}</p>
           {% if exercise.question_type == 'mcq' and options %}
             <div class="mcq-options">
