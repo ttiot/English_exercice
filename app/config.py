@@ -60,9 +60,12 @@ class Config:
     # Cookies de session
     SESSION_COOKIE_SECURE = FLASK_ENV != "development"
     SESSION_COOKIE_HTTPONLY = True
-    SESSION_COOKIE_SAMESITE = "Lax"
+    SESSION_COOKIE_SAMESITE = "Strict"
 
     REMEMBER_COOKIE_DURATION = timedelta(days=30)
+
+    # Taille maximale des requêtes (upload + formulaires) : 5 Mo
+    MAX_CONTENT_LENGTH = 5 * 1024 * 1024
 
     # Admin bootstrap (toujours par env en prod)
     DEFAULT_ADMIN_EMAIL = os.environ.get("DEFAULT_ADMIN_EMAIL", "admin@example.com")

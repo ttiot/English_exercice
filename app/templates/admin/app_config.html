@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% block title %}Configuration système{% endblock %}
+{% block content %}
+
+  <div class="card">
+    <div class="card-header-actions">
+      <div>
+        <h2>Configuration système</h2>
+        <p class="muted">Paramètres applicatifs globaux : sauvegardes, chiffrement et options d'infrastructure.</p>
+      </div>
+      <div class="card-actions">
+        <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_hub') }}">← Hub admin</a>
+        <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Espace parents</a>
+      </div>
+    </div>
+  </div>
+
+  {# ── Sauvegarde ── #}
+  <div class="card">
+    <h3>Chiffrement des sauvegardes</h3>
+    <p class="muted">
+      La clé est stockée chiffrée en base de données (Fernet) et exportée vers
+      <code>/data/.backup_key</code> à la sauvegarde. Le conteneur de backup lit
+      ce fichier pour chiffrer les exports SQLite en AES-256-CBC.
+    </p>
+
+    <div class="kpi-grid" style="margin-bottom: 1.5rem;">
+      <div class="kpi-tile">
+        <span class="kpi-label">Statut</span>
+        <span class="kpi-value">
+          {% if has_backup_key %}
+            <span class="badge badge-success">Configurée</span>
+          {% else %}
+            <span class="badge badge-danger">Absente</span>
+          {% endif %}
+        </span>
+        <span class="kpi-sub">
+          {% if has_backup_key %}
+            Une clé est active. Les backups sont chiffrés.
+          {% else %}
+            Aucune clé. Les sauvegardes ne sont pas chiffrées.
+          {% endif %}
+        </span>
+      </div>
+    </div>
+
+    {# ── Générer une nouvelle clé ── #}
+    <div class="sys-config-section">
+      <h4>Générer une nouvelle clé</h4>
+      <p class="muted">
+        Génère une clé Fernet aléatoire, l'enregistre et l'affiche <strong>une seule fois</strong>.
+        Notez-la immédiatement dans votre gestionnaire de mots de passe.
+      </p>
+      <form method="post" action="{{ url_for('main.admin_system_config') }}"
+            onsubmit="return confirm('Générer une nouvelle clé ? L\'ancienne sera écrasée et les anciens backups deviendront illisibles.');">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="action" value="generate_backup_key" />
+        <button class="btn btn-primary" type="submit">Générer une clé aléatoire</button>
+      </form>
+    </div>
+
+    <hr class="sys-divider" />
+
+    {# ── Saisir une clé manuellement ── #}
+    <div class="sys-config-section">
+      <h4>Saisir une clé existante</h4>
+      <p class="muted">
+        Collez ici une clé Fernet base64 (44 caractères) si vous voulez
+        reprendre une clé existante (ex. après réinstallation).
+      </p>
+      <form method="post" action="{{ url_for('main.admin_system_config') }}" class="sys-key-form">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <input type="hidden" name="action" value="save_backup_key" />
+        <input type="password" name="backup_key" placeholder="Clé Fernet base64 (44 car.)"
+               autocomplete="off" minlength="44" maxlength="44" required
+               class="sys-key-input" />
+        <button class="btn btn-secondary" type="submit">Enregistrer</button>
+      </form>
+    </div>
+
+    {% if has_backup_key %}
+      <hr class="sys-divider" />
+      <div class="sys-config-section">
+        <h4>Supprimer la clé</h4>
+        <p class="muted">
+          Supprime la clé de la base et efface <code>/data/.backup_key</code>.
+          Les prochains backups ne seront plus chiffrés.
+        </p>
+        <form method="post" action="{{ url_for('main.admin_system_config') }}"
+              onsubmit="return confirm('Supprimer la clé de chiffrement ? Les prochains backups ne seront plus chiffrés.');">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+          <input type="hidden" name="action" value="clear_backup_key" />
+          <button class="btn btn-danger" type="submit">Supprimer la clé</button>
+        </form>
+      </div>
+    {% endif %}
+  </div>
+
+  {# ── Aide ── #}
+  <div class="card">
+    <h3>Comment ça marche</h3>
+    <ol style="line-height: 2; color: var(--text-muted); padding-left: 1.5rem;">
+      <li>Cliquez <em>Générer une clé aléatoire</em> — la clé apparaît dans le message flash.</li>
+      <li>Copiez-la dans votre gestionnaire de mots de passe (elle ne sera plus affichée).</li>
+      <li>Le fichier <code>/data/.backup_key</code> est automatiquement mis à jour.</li>
+      <li>Le conteneur <code>backup</code> lit ce fichier à chaque cycle et chiffre l'export SQLite.</li>
+      <li>Pour restaurer, déchiffrez avec <code>openssl enc -d -aes-256-cbc -pbkdf2 -pass pass:&lt;clé&gt; -in backup.sqlite.enc -out restored.sqlite</code>.</li>
+    </ol>
+  </div>
+
+{% endblock %}

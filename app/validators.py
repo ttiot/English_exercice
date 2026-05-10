@@ -72,8 +72,8 @@ def validate_password(password: str) -> tuple[bool, str]:
     if not password:
         return False, "Le mot de passe est requis"
     
-    if len(password) < 8:
-        return False, "Le mot de passe doit contenir au moins 8 caractères"
+    if len(password) < 12:
+        return False, "Le mot de passe doit contenir au moins 12 caractères"
     
     if len(password) > 128:
         return False, "Le mot de passe est trop long (maximum 128 caractères)"

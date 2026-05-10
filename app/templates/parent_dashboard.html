@@ -1,6 +1,8 @@
 {% extends 'base.html' %}
 {% block title %}Tableau de bord parents{% endblock %}
 {% block content %}
+
+  {# ── En-tête ── #}
   <div class="card">
     <div class="card-header-actions">
       <div>
@@ -15,66 +17,74 @@
     </div>
   </div>
 
+  {# ── Progression des élèves ── #}
   <div class="card">
     <h3>Progression des élèves</h3>
     {% if stats %}
-      <table class="table">
-        <thead>
-          <tr>
-            <th>Élève</th>
-            <th>Sessions complétées</th>
-            <th>Score moyen</th>
-            <th>Temps cumulé</th>
-            <th>Accès</th>
-            <th>Gestion</th>
-            <th>Bilan trimestriel</th>
-          </tr>
-        </thead>
-        <tbody>
-          {% for item in stats %}
+      <div class="table-wrapper">
+        <table class="table">
+          <thead>
             <tr>
-              <td>{{ item.student.full_name() }}</td>
-              <td>{{ item.total_sessions }}</td>
-              <td>{{ item.average_score }}%</td>
-              <td>{{ item.total_minutes }} min</td>
-              <td><a href="{{ url_for('main.view_student', student_id=item.student.id) }}">Voir le profil</a></td>
-              <td><a href="{{ url_for('main.manage_student', student_id=item.student.id) }}">Modifier</a></td>
-              <td>
-                <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
-                •
-                <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='pdf') }}">PDF</a>
-              </td>
+              <th>Élève</th>
+              <th>Sessions</th>
+              <th>Score moyen</th>
+              <th>Temps cumulé</th>
+              <th>Accès</th>
+              <th>Gestion</th>
+              <th>Bilan</th>
             </tr>
-          {% endfor %}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {% for item in stats %}
+              <tr>
+                <td>{{ item.student.full_name() }}</td>
+                <td>{{ item.total_sessions }}</td>
+                <td>{{ item.average_score }}%</td>
+                <td>{{ item.total_minutes }} min</td>
+                <td><a href="{{ url_for('main.view_student', student_id=item.student.id) }}">Profil</a></td>
+                <td><a href="{{ url_for('main.manage_student', student_id=item.student.id) }}">Modifier</a></td>
+                <td class="nowrap">
+                  <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
+                  &nbsp;·&nbsp;
+                  <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='pdf') }}">PDF</a>
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     {% else %}
-      <p>Pas encore de données. Invitez votre enfant à démarrer une session !</p>
+      <p class="muted">Pas encore de données. Invitez votre enfant à démarrer une session !</p>
     {% endif %}
   </div>
 
+  {# ── Objectifs hebdomadaires ── #}
   <div class="card">
-    <h3>Objectifs hebdo & défis (semaine du {{ week_start.strftime('%d/%m') }} au {{ week_end.strftime('%d/%m') }})</h3>
+    <h3>Objectifs hebdo &amp; défis
+      <span class="muted" style="font-weight: 400; font-size: 0.9rem;">
+        — semaine du {{ week_start.strftime('%d/%m') }} au {{ week_end.strftime('%d/%m') }}
+      </span>
+    </h3>
     {% if stats %}
       <div class="responsive-grid">
         {% for item in stats %}
           <div class="stats-card">
             <h4>{{ item.student.full_name() }}</h4>
-            <p>
-              Progression : {{ item.weekly_progress.sessions }}/{{ item.weekly_goal.target_sessions if item.weekly_goal else 3 }} sessions •
-              {{ item.weekly_progress.minutes }}/{{ item.weekly_goal.target_minutes if item.weekly_goal else 45 }} min •
-              {{ item.weekly_progress.accuracy }}% / {{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}% •
+            <p class="muted" style="font-size: 0.85rem;">
+              {{ item.weekly_progress.sessions }}/{{ item.weekly_goal.target_sessions if item.weekly_goal else 3 }} sessions &nbsp;·&nbsp;
+              {{ item.weekly_progress.minutes }}/{{ item.weekly_goal.target_minutes if item.weekly_goal else 45 }} min &nbsp;·&nbsp;
+              {{ item.weekly_progress.accuracy }}% / {{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}% précision &nbsp;·&nbsp;
               {{ item.weekly_progress.challenges }}/{{ item.weekly_goal.target_challenges if item.weekly_goal else 1 }} défis
             </p>
             <form class="inline-form" method="post" action="{{ url_for('main.update_weekly_goal', student_id=item.student.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-              <input name="target_sessions" type="number" min="1" value="{{ item.weekly_goal.target_sessions if item.weekly_goal else 3 }}" />
-              <input name="target_minutes" type="number" min="5" value="{{ item.weekly_goal.target_minutes if item.weekly_goal else 45 }}" />
-              <input name="target_accuracy" type="number" min="0" max="100" value="{{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}" />
-              <input name="target_challenges" type="number" min="0" value="{{ item.weekly_goal.target_challenges if item.weekly_goal else 1 }}" />
-              <button class="btn btn-secondary btn-small" type="submit">Mettre à jour</button>
+              <input name="target_sessions"  type="number" min="1"       value="{{ item.weekly_goal.target_sessions  if item.weekly_goal else 3  }}" title="Sessions" />
+              <input name="target_minutes"   type="number" min="5"       value="{{ item.weekly_goal.target_minutes   if item.weekly_goal else 45 }}" title="Minutes" />
+              <input name="target_accuracy"  type="number" min="0" max="100" value="{{ item.weekly_goal.target_accuracy  if item.weekly_goal else 70 }}" title="Précision %" />
+              <input name="target_challenges" type="number" min="0"      value="{{ item.weekly_goal.target_challenges if item.weekly_goal else 1  }}" title="Défis" />
+              <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
             </form>
-            <p class="muted">Badges obtenus : {{ item.earned_badges }}</p>
+            <p class="muted" style="font-size: 0.82rem;">Badges obtenus : {{ item.earned_badges }}</p>
           </div>
         {% endfor %}
       </div>
@@ -83,6 +93,7 @@
     {% endif %}
   </div>
 
+  {# ── Analyse détaillée par élève ── #}
   <div class="card">
     <h3>Analyse détaillée par élève</h3>
     {% if stats %}
@@ -117,78 +128,87 @@
     {% endif %}
   </div>
 
-  <div class="responsive-grid">
-    <div class="card">
-      <h3>Catégories de questions</h3>
-      <form class="inline-form" method="post" action="{{ url_for('main.create_category') }}">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-        <input name="name" placeholder="Nouvelle catégorie" required />
-        <button class="btn btn-primary" type="submit">Ajouter</button>
-      </form>
-      {% if categories %}
-        <ul class="category-list">
-          {% for category in categories %}
-            <li>
-              <strong>{{ category.name }}</strong>
-              <span class="muted">code : {{ category.code }}</span>
-              <details>
-                <summary>Modifier</summary>
-                <form method="post" action="{{ url_for('main.rename_category', category_id=category.id) }}" class="inline-form">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                  <input name="name" value="{{ category.name }}" required />
-                  <button class="btn btn-primary" type="submit">Renommer</button>
-                </form>
-                <form method="post" action="{{ url_for('main.delete_category', category_id=category.id) }}" class="inline-form">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                  <button class="btn btn-danger" type="submit" onclick="return confirm('Supprimer cette catégorie ?');">Supprimer</button>
-                </form>
-              </details>
-            </li>
-          {% endfor %}
-        </ul>
-      {% else %}
-        <p class="muted">Aucune catégorie enregistrée.</p>
-      {% endif %}
-    </div>
-
-    {% if all_users %}
-      <div class="card">
-        <h3>Gestion des comptes</h3>
-        <p class="muted">Changez le rôle d'un utilisateur pour lui donner des droits de parent ou d'administrateur.</p>
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Utilisateur</th>
-              <th>E-mail</th>
-              <th>Rôle</th>
-              <th>Mettre à jour</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for user in all_users %}
-              <tr>
-                <td>{{ user.full_name() }}</td>
-                <td>{{ user.email or '—' }}</td>
-                <td>{{ user.role }}</td>
-                <td>
-                  <form class="inline-form" method="post" action="{{ url_for('main.update_user_role', user_id=user.id) }}">
-                    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                    <select name="role">
-                      <option value="student" {% if user.role == 'student' %}selected{% endif %}>Élève</option>
-                      <option value="parent" {% if user.role == 'parent' %}selected{% endif %}>Parent</option>
-                      <option value="admin" {% if user.role == 'admin' %}selected{% endif %}>Admin</option>
-                    </select>
-                    <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
-                  </form>
-                </td>
-              </tr>
-            {% endfor %}
-          </tbody>
-        </table>
-      </div>
+  {# ── Catégories de questions ── #}
+  <div class="card">
+    <h3>Catégories de questions</h3>
+    <form class="inline-form" method="post" action="{{ url_for('main.create_category') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <input name="name" placeholder="Nouvelle catégorie" required />
+      <button class="btn btn-primary" type="submit">Ajouter</button>
+    </form>
+    {% if categories %}
+      <ul class="category-list">
+        {% for category in categories %}
+          <li>
+            <strong>{{ category.name }}</strong>
+            <span class="muted">code : {{ category.code }}</span>
+            <details>
+              <summary>Modifier</summary>
+              <form method="post" action="{{ url_for('main.rename_category', category_id=category.id) }}" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <input name="name" value="{{ category.name }}" required />
+                <button class="btn btn-primary" type="submit">Renommer</button>
+              </form>
+              <form method="post" action="{{ url_for('main.delete_category', category_id=category.id) }}" class="inline-form">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                <button class="btn btn-danger" type="submit" onclick="return confirm('Supprimer cette catégorie ?');">Supprimer</button>
+              </form>
+            </details>
+          </li>
+        {% endfor %}
+      </ul>
+    {% else %}
+      <p class="muted">Aucune catégorie enregistrée.</p>
     {% endif %}
   </div>
 
+  {# ── Gestion des comptes (admin seulement) ── #}
+  {% if all_users %}
+    <div class="card">
+      <div class="card-header-actions">
+        <div>
+          <h3>Gestion des comptes</h3>
+          <p class="muted">Modifiez le rôle d'un utilisateur pour lui accorder les droits parent ou administrateur.</p>
+        </div>
+        <div class="card-actions">
+          <a class="btn btn-secondary" href="{{ url_for('main.admin_system_config') }}">Configuration système</a>
+          <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_hub') }}">Administration IA</a>
+        </div>
+      </div>
+
+      <div class="account-grid">
+        {% for user in all_users %}
+          <div class="account-card">
+            <div class="account-card__avatar">
+              {{ user.first_name[0] | upper }}{{ (user.last_name[0] | upper) if user.last_name else '' }}
+            </div>
+            <div class="account-card__body">
+              <strong class="account-card__name">{{ user.full_name() }}</strong>
+              <span class="account-card__email muted">{{ user.email or '—' }}</span>
+              <span class="badge
+                {%- if user.role == 'admin' %} badge-danger
+                {%- elif user.role == 'parent' %} badge-warning
+                {%- else %} badge-default{% endif %}">
+                {{ user.role | capitalize }}
+              </span>
+            </div>
+            <form class="account-card__form" method="post"
+                  action="{{ url_for('main.update_user_role', user_id=user.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+              <select name="role" class="account-card__select">
+                <option value="student" {% if user.role == 'student' %}selected{% endif %}>Élève</option>
+                <option value="parent"  {% if user.role == 'parent'  %}selected{% endif %}>Parent</option>
+                <option value="admin"   {% if user.role == 'admin'   %}selected{% endif %}>Admin</option>
+              </select>
+              <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
+            </form>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  {% endif %}
+
+  {# ── Exercices préparés en attente ── #}
   <div class="card">
     <h3>Exercices préparés en attente</h3>
     {% if prepared_sets %}
@@ -206,19 +226,20 @@
                 Proposé à tous les élèves
               {% endif %}
               {% if exercise_set.use_time_limit and exercise_set.time_limit_seconds %}
-                • Temps limite :
+                &nbsp;·&nbsp; Temps limite :
                 {% set minutes = exercise_set.time_limit_seconds // 60 %}
                 {% set seconds = exercise_set.time_limit_seconds % 60 %}
                 {{ minutes }} min {{ seconds }} s
               {% else %}
-                • Sans limite
+                &nbsp;·&nbsp; Sans limite
               {% endif %}
             </p>
           </article>
         {% endfor %}
       </div>
     {% else %}
-      <p>Aucun exercice préparé pour le moment.</p>
+      <p class="muted">Aucun exercice préparé pour le moment.</p>
     {% endif %}
   </div>
+
 {% endblock %}

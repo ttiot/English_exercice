@@ -338,7 +338,6 @@
               <td>
                 <form method="post" action="{{ url_for('main.delete_session', session_id=sess.id) }}" onsubmit="return confirm('Supprimer cette session ?');">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                  <input type="hidden" name="next" value="{{ request.full_path }}" />
                   <button class="btn btn-danger btn-small" type="submit">Supprimer</button>
                 </form>
               </td>

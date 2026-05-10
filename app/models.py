@@ -1,3 +1,5 @@
+import re
+import string
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Optional, Sequence
@@ -7,6 +9,20 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import db
+
+_SIMPLE_PLACEHOLDER = re.compile(r'^\w+$')
+
+
+def _safe_format(template: str, **ctx) -> str:
+    """Variante sécurisée de str.format() : n'autorise que les identifiants
+    simples (pas d'accès attribut/index) pour prévenir l'injection SSTI."""
+    for _, field_name, _, _ in string.Formatter().parse(template):
+        if field_name is None:
+            continue
+        base = field_name.split('.')[0].split('[')[0]
+        if not _SIMPLE_PLACEHOLDER.match(base) or '.' in field_name or '[' in field_name:
+            raise ValueError(f"Placeholder non autorisé : {{{field_name}}}")
+    return template.format(**ctx)
 
 
 class TimestampMixin:
@@ -395,6 +411,81 @@ class OpenAIConfig(db.Model, TimestampMixin):
         config = OpenAIConfig.query.first()
         if not config:
             config = OpenAIConfig()
+            db.session.add(config)
+            db.session.commit()
+        return config
+
+
+class AppConfig(db.Model, TimestampMixin):
+    """Singleton de configuration applicative modifiable depuis l'admin.
+
+    La clé de chiffrement des sauvegardes est stockée chiffrée (Fernet).
+    À la sauvegarde, la clé en clair est également écrite dans
+    ``<DATA_DIR>/.backup_key`` pour que le conteneur de backup puisse l'utiliser.
+    """
+
+    __tablename__ = "app_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    backup_key_encrypted = db.Column(db.Text, nullable=True)
+
+    def set_backup_key(self, key: Optional[str]) -> None:
+        """Chiffre et stocke la clé de backup. Vide/None supprime la clé."""
+        if not key:
+            self.backup_key_encrypted = None
+            return
+        from cryptography.fernet import Fernet
+        from flask import current_app
+        fernet_key = current_app.config.get("FERNET_KEY")
+        if not fernet_key:
+            current_app.logger.warning("FERNET_KEY non définie, clé de backup non chiffrée.")
+            return
+        if isinstance(fernet_key, str):
+            fernet_key = fernet_key.encode()
+        self.backup_key_encrypted = Fernet(fernet_key).encrypt(key.encode()).decode()
+
+    def get_backup_key(self) -> Optional[str]:
+        """Retourne la clé de backup en clair, ou None si absente/illisible."""
+        if not self.backup_key_encrypted:
+            return None
+        from cryptography.fernet import Fernet
+        from flask import current_app
+        fernet_key = current_app.config.get("FERNET_KEY")
+        if not fernet_key:
+            return None
+        if isinstance(fernet_key, str):
+            fernet_key = fernet_key.encode()
+        try:
+            return Fernet(fernet_key).decrypt(self.backup_key_encrypted.encode()).decode()
+        except Exception:
+            return None
+
+    def export_key_file(self) -> bool:
+        """Écrit la clé en clair dans DATA_DIR/.backup_key pour le conteneur backup.
+
+        Retourne True si l'export a réussi, False sinon.
+        """
+        from flask import current_app
+        from pathlib import Path
+        key = self.get_backup_key()
+        data_dir = Path(current_app.config.get("DATA_DIR", "/data"))
+        key_path = data_dir / ".backup_key"
+        try:
+            if key:
+                key_path.write_text(key)
+                key_path.chmod(0o600)
+            elif key_path.exists():
+                key_path.unlink()
+            return True
+        except Exception as exc:
+            current_app.logger.error("Impossible d'exporter .backup_key : %s", exc)
+            return False
+
+    @staticmethod
+    def get_or_create() -> "AppConfig":
+        config = AppConfig.query.first()
+        if not config:
+            config = AppConfig()
             db.session.add(config)
             db.session.commit()
         return config
@@ -864,14 +955,14 @@ class OpenAIPrompt(db.Model, TimestampMixin):
         return data if isinstance(data, list) else []
 
     def render_user_prompt(self, **ctx) -> str:
-        """Rend ``user_prompt_template`` avec ``str.format``.
+        """Rend ``user_prompt_template`` de façon sécurisée.
 
-        En cas de ``KeyError`` (template invalide après édition admin),
-        retombe sur la valeur par défaut hardcodée pour ne pas casser la
-        génération.
+        Utilise ``_safe_format`` qui rejette tout accès attribut/index dans
+        les placeholders pour prévenir l'injection SSTI. En cas d'erreur,
+        retombe sur le template par défaut.
         """
         try:
-            return self.user_prompt_template.format(**ctx)
+            return _safe_format(self.user_prompt_template, **ctx)
         except (KeyError, IndexError, ValueError):
             from .services.ai_generator import _DEFAULT_PROMPTS
 
@@ -879,14 +970,14 @@ class OpenAIPrompt(db.Model, TimestampMixin):
             if not defaults:
                 return self.user_prompt_template
             try:
-                return defaults["user_prompt_template"].format(**ctx)
+                return _safe_format(defaults["user_prompt_template"], **ctx)
             except (KeyError, IndexError, ValueError):
                 return defaults["user_prompt_template"]
 
     def render_system_prompt(self, **ctx) -> str:
-        """Rend ``system_prompt`` avec ``str.format`` (fallback identique)."""
+        """Rend ``system_prompt`` de façon sécurisée (fallback identique)."""
         try:
-            return self.system_prompt.format(**ctx)
+            return _safe_format(self.system_prompt, **ctx)
         except (KeyError, IndexError, ValueError):
             from .services.ai_generator import _DEFAULT_PROMPTS
 
@@ -894,7 +985,7 @@ class OpenAIPrompt(db.Model, TimestampMixin):
             if not defaults:
                 return self.system_prompt
             try:
-                return defaults["system_prompt"].format(**ctx)
+                return _safe_format(defaults["system_prompt"], **ctx)
             except (KeyError, IndexError, ValueError):
                 return defaults["system_prompt"]
 

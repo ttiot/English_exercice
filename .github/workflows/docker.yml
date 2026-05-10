@@ -47,6 +47,7 @@ jobs:
           images: ${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=unstable
+            type=raw,value=latest
             type=sha,format=short,prefix=sha-
           labels: |
             org.opencontainers.image.source=${{ github.repositoryUrl }}

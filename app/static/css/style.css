@@ -1370,3 +1370,111 @@ footer {
   .skills-grid { grid-template-columns: 1fr 1fr; }
   .badges-grid { grid-template-columns: 1fr 1fr; }
 }
+
+/* ═══════════════════════════════════════════════════════════════
+   GESTION DES COMPTES — Cartes utilisateur
+═══════════════════════════════════════════════════════════════ */
+
+.account-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-top: 1.25rem;
+}
+
+.account-card {
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  border-radius: 14px;
+  padding: 1.1rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: border-color 0.15s;
+}
+.account-card:hover { border-color: rgba(255,255,255,0.24); }
+
+.account-card__avatar {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--accent-cyan), var(--accent-blue));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+  font-size: 1rem;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.account-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.account-card__name { font-size: 1rem; }
+.account-card__email { font-size: 0.82rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.account-card__form {
+  display: flex;
+  gap: 0.5rem;
+  align-items: center;
+  margin-top: auto;
+}
+.account-card__select {
+  flex: 1;
+  background: rgba(255,255,255,0.08);
+  border: 1px solid var(--glass-border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.88rem;
+}
+.account-card__select:focus { outline: 2px solid var(--accent-cyan); outline-offset: 1px; }
+
+/* table-wrapper : scroll horizontal sur mobile */
+.table-wrapper { overflow-x: auto; }
+.nowrap { white-space: nowrap; }
+
+/* ═══════════════════════════════════════════════════════════════
+   CONFIGURATION SYSTÈME — Admin
+═══════════════════════════════════════════════════════════════ */
+
+.sys-config-section {
+  margin: 1.25rem 0;
+}
+.sys-config-section h4 {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+.sys-key-form {
+  display: flex;
+  gap: 0.75rem;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-top: 0.5rem;
+}
+.sys-key-input {
+  flex: 1;
+  min-width: 220px;
+  background: rgba(255,255,255,0.07);
+  border: 1px solid var(--glass-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.9rem;
+  font-family: monospace;
+}
+.sys-key-input:focus { outline: 2px solid var(--accent-cyan); outline-offset: 1px; }
+.sys-divider {
+  border: none;
+  border-top: 1px solid var(--glass-border);
+  margin: 1.25rem 0;
+}
+
+@media (max-width: 700px) {
+  .account-grid { grid-template-columns: 1fr; }
+  .account-card__form { flex-wrap: wrap; }
+  .account-card__form .btn { flex: 1; }
+}
