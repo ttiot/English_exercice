@@ -2542,6 +2542,142 @@ def toggle_exercise_correct(session_id: int, exercise_id: int):
     return redirect(url_for("main.session_summary", session_id=session_id))
 
 
+@bp.route(
+    "/parents/sessions/<int:session_id>/exercises/<int:exercise_id>/edit",
+    methods=["GET", "POST"],
+)
+@_parent_required
+def edit_exercise(session_id: int, exercise_id: int):
+    session_obj = PracticeSession.query.get_or_404(session_id)
+    exercise = SessionExercise.query.get_or_404(exercise_id)
+    if exercise.session_id != session_id:
+        abort(404)
+
+    categories = QuestionCategory.query.order_by(QuestionCategory.order_index).all()
+
+    if request.method == "POST":
+        prompt = sanitize_text_input(request.form.get("prompt", ""))
+        correct_answer = sanitize_text_input(request.form.get("correct_answer", ""))
+        category_code = request.form.get("category", exercise.category).strip()
+
+        valid, msg = validate_question_content(prompt, correct_answer)
+        if not valid:
+            flash(msg, "danger")
+            return render_template(
+                "edit_exercise.html",
+                session_obj=session_obj,
+                exercise=exercise,
+                categories=categories,
+                form_data={"prompt": prompt, "correct_answer": correct_answer, "category": category_code},
+            )
+
+        known_codes = {c.code for c in categories}
+        if category_code not in known_codes:
+            category_code = exercise.category
+
+        exercise.prompt = prompt
+        exercise.correct_answer = correct_answer
+        exercise.category = category_code
+        db.session.commit()
+
+        flash("Exercice modifié avec succès.", "success")
+        return redirect(url_for("main.session_summary", session_id=session_id))
+
+    return render_template(
+        "edit_exercise.html",
+        session_obj=session_obj,
+        exercise=exercise,
+        categories=categories,
+        form_data=None,
+    )
+
+
+@bp.route(
+    "/parents/students/<int:student_id>/generate-ai-exercises",
+    methods=["GET", "POST"],
+)
+@_parent_required
+def parent_generate_ai_exercises(student_id: int):
+    student = _get_student_or_404(student_id)
+
+    if request.method == "POST":
+        from .services.ai_generator import generate_exercises as ai_generate_exercises, get_openai_client, is_budget_exceeded
+
+        student_prompt = sanitize_text_input(request.form.get("student_prompt", ""))
+        difficulty = request.form.get("difficulty", "beginner").strip()
+        try:
+            question_count = int(request.form.get("question_count", 10))
+            question_count = max(5, min(25, question_count))
+        except (ValueError, TypeError):
+            question_count = 10
+
+        if len(student_prompt) < 5:
+            flash("Le sujet doit contenir au moins 5 caractères.", "danger")
+            return render_template(
+                "parent_ai_generate.html",
+                student=student,
+                difficulty_labels=DIFFICULTY_DISPLAY,
+                form_data={"student_prompt": student_prompt, "difficulty": difficulty, "question_count": question_count},
+            )
+
+        if difficulty not in DIFFICULTY_LEVELS:
+            difficulty = "beginner"
+
+        client, client_info = get_openai_client()
+        if client is None:
+            flash("La génération IA n'est pas disponible (aucune clé API configurée).", "warning")
+            return redirect(url_for("main.view_student", student_id=student_id))
+
+        if is_budget_exceeded():
+            flash("Le budget mensuel de génération IA est atteint.", "warning")
+            return redirect(url_for("main.view_student", student_id=student_id))
+
+        results = ai_generate_exercises(student_prompt, question_count, difficulty, student_id)
+
+        if not results:
+            flash("La génération n'a produit aucun exercice. Reformule le sujet et réessaie.", "danger")
+            return render_template(
+                "parent_ai_generate.html",
+                student=student,
+                difficulty_labels=DIFFICULTY_DISPLAY,
+                form_data={"student_prompt": student_prompt, "difficulty": difficulty, "question_count": question_count},
+            )
+
+        safe_prompt = student_prompt[:50]
+        exercise_set = PreparedExerciseSet(
+            title=f"IA : {safe_prompt}",
+            student_id=student.id,
+        )
+        db.session.add(exercise_set)
+        db.session.flush()
+
+        for idx, (ep, _pool_row) in enumerate(results):
+            q = PreparedExerciseQuestion(
+                exercise_set_id=exercise_set.id,
+                prompt=ep.prompt,
+                answer=ep.answer,
+                category_code=ep.category,
+                position=idx,
+            )
+            db.session.add(q)
+
+        db.session.commit()
+
+        flash(
+            f"{len(results)} exercice(s) générés et assignés à {student.full_name()}. "
+            "Ils seront proposés lors de sa prochaine session.",
+            "success",
+        )
+        return redirect(url_for("main.view_student", student_id=student_id))
+
+    return render_template(
+        "parent_ai_generate.html",
+        student=student,
+        difficulty_labels=DIFFICULTY_DISPLAY,
+        form_data=None,
+    )
+
+
 @bp.route("/admin/users/<int:user_id>/role", methods=["POST"])
 @_admin_required
 def update_user_role(user_id: int):
