@@ -51,8 +51,8 @@ services:
   backup:
     image: alpine:3.20
     restart: unless-stopped
-    environment:
-      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
+    # Pas de BACKUP_ENCRYPTION_KEY ici : la clé est gérée depuis l'admin Flask
+    # et écrite dans /data/.backup_key par l'application.
     volumes:
       - app_data:/data:ro
       - ./backups:/backups
@@ -68,8 +68,8 @@ services:
          TS=$(date +%F_%H-%M-%S);
          TMP=/tmp/app_${TS}.sqlite;
          sqlite3 /data/app.db ".backup ${TMP}";
-         if [ -n "$BACKUP_ENCRYPTION_KEY" ]; then
-           openssl enc -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY \
+         if [ -f /data/.backup_key ] && [ -s /data/.backup_key ]; then
+           openssl enc -aes-256-cbc -pbkdf2 -pass file:/data/.backup_key \
              -in ${TMP} -out /backups/app_${TS}.sqlite.enc;
            rm -f ${TMP};
            chmod 600 /backups/app_${TS}.sqlite.enc;

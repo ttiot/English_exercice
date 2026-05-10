@@ -53,6 +53,7 @@ from .exercise_factory import (
 from .models import (
     AICallLog,
     AIGeneratedExercise,
+    AppConfig,
     Badge,
     OpenAIConfig,
     OpenAIPrompt,
@@ -2873,4 +2874,55 @@ def admin_openai_statistics():
         budget=budget,
         spent=spent,
         budget_ratio=budget_ratio,
+    )
+
+
+# ---------------------------------------------------------------------------
+# Administration système
+# ---------------------------------------------------------------------------
+
+@bp.route("/admin/system", methods=["GET", "POST"])
+@_admin_required
+def admin_system_config():
+    """Configuration système : clé de chiffrement des sauvegardes, etc."""
+    app_config = AppConfig.get_or_create()
+
+    if request.method == "POST":
+        action = request.form.get("action")
+
+        if action == "save_backup_key":
+            raw_key = request.form.get("backup_key", "").strip()
+            if raw_key:
+                app_config.set_backup_key(raw_key)
+                db.session.commit()
+                if app_config.export_key_file():
+                    flash("Clé de chiffrement backup enregistrée et exportée.", "success")
+                else:
+                    flash("Clé enregistrée en base, mais l'export vers /data/.backup_key a échoué.", "warning")
+            else:
+                flash("La clé ne peut pas être vide.", "warning")
+
+        elif action == "clear_backup_key":
+            app_config.set_backup_key(None)
+            db.session.commit()
+            app_config.export_key_file()
+            flash("Clé de chiffrement backup supprimée.", "info")
+
+        elif action == "generate_backup_key":
+            from cryptography.fernet import Fernet
+            new_key = Fernet.generate_key().decode()
+            app_config.set_backup_key(new_key)
+            db.session.commit()
+            if app_config.export_key_file():
+                flash(f"Nouvelle clé générée et exportée. Copiez-la maintenant : {new_key}", "success")
+            else:
+                flash(f"Nouvelle clé générée : {new_key}. Export vers /data/.backup_key a échoué.", "warning")
+
+        return redirect(url_for("main.admin_system_config"))
+
+    has_backup_key = bool(app_config.backup_key_encrypted)
+    return render_template(
+        "admin/app_config.html",
+        app_config=app_config,
+        has_backup_key=has_backup_key,
     )
