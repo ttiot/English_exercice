@@ -39,7 +39,7 @@ try:
 except ImportError:
     PIL_AVAILABLE = False
 
-from . import db
+from . import db, limiter
 from .config import Config
 from .exercise_factory import (
     ExercisePrompt,
@@ -56,6 +56,7 @@ from .models import (
     Badge,
     OpenAIConfig,
     OpenAIPrompt,
+    _safe_format,
     PracticeSession,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
@@ -117,6 +118,15 @@ def is_safe_url(target):
     test_url = urlparse(urljoin(request.host_url, target))
     return test_url.scheme in ('http', 'https') and \
            ref_url.netloc == test_url.netloc
+
+
+def _csv_safe(value) -> str:
+    """Préfixe les cellules CSV commençant par un caractère de formule (=, +, -, @, |, %)
+    pour prévenir l'injection de formules dans Excel / LibreOffice."""
+    s = str(value) if value is not None else ""
+    if s and s[0] in ('=', '+', '-', '@', '|', '%'):
+        return "'" + s
+    return s
 
 
 def validate_image_file(file):
@@ -904,6 +914,7 @@ def index():
 
 
 @bp.route("/register", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
 def register():
     if _current_user():
         flash("Vous êtes déjà connecté·e.", "info")
@@ -993,34 +1004,39 @@ def register():
 
 
 @bp.route("/login", methods=["GET", "POST"])
+@limiter.limit("10 per minute", methods=["POST"])
 def login():
     if _current_user():
         flash("Tu es déjà connecté·e.", "info")
         return redirect(url_for("main.index"))
 
-    if request.method == "POST":
-        email_raw = request.form.get("email", "").strip().lower()
-        password = request.form.get("password", "")
-        next_url = request.form.get("next")
+    if request.method == "GET":
+        # Stocker le redirect cible en session pour ne pas l'exposer dans le HTML
+        raw_next = request.args.get("next")
+        if raw_next and is_safe_url(raw_next):
+            session["login_next"] = raw_next
+        return render_template("auth/login.html")
 
-        if not email_raw or not password:
-            flash("Identifiants incomplets.", "danger")
-            return redirect(url_for("main.login"))
+    # POST
+    email_raw = request.form.get("email", "").strip().lower()
+    password = request.form.get("password", "")
 
-        student = Student.query.filter_by(email=email_raw).first()
-        if not student or not student.check_password(password):
-            flash("E-mail ou mot de passe invalide.", "danger")
-            return redirect(url_for("main.login"))
+    if not email_raw or not password:
+        flash("Identifiants incomplets.", "danger")
+        return redirect(url_for("main.login"))
 
-        _login_user(student)
-        flash("Connexion réussie !", "success")
+    student = Student.query.filter_by(email=email_raw).first()
+    if not student or not student.check_password(password):
+        flash("E-mail ou mot de passe invalide.", "danger")
+        return redirect(url_for("main.login"))
 
-        if next_url and is_safe_url(next_url):
-            return redirect(next_url)
-        return redirect(url_for("main.index"))
+    _login_user(student)
+    flash("Connexion réussie !", "success")
 
-    next_url = request.args.get("next") if request.method == "GET" else None
-    return render_template("auth/login.html", next_url=next_url)
+    next_url = session.pop("login_next", None)
+    if next_url and is_safe_url(next_url):
+        return redirect(next_url)
+    return redirect(url_for("main.index"))
 
 
 @bp.route("/logout", methods=["POST"])
@@ -1995,7 +2011,8 @@ def export_quarter_report(student_id: int):
             for error in recurring_errors:
                 lines.append(f"- {error['prompt']} ({error['count']}x)")
         pdf_bytes = _build_simple_pdf(lines)
-        filename = f"bilan_{student.first_name}_{year_value}_T{quarter_value}.pdf"
+        safe_fname = re.sub(r"[^a-zA-Z0-9_\-]", "_", student.first_name)
+        filename = f"bilan_{safe_fname}_{year_value}_T{quarter_value}.pdf"
         return current_app.response_class(
             pdf_bytes,
             mimetype="application/pdf",
@@ -2006,7 +2023,7 @@ def export_quarter_report(student_id: int):
 
     output = StringIO()
     writer = csv.writer(output)
-    writer.writerow(["Bilan trimestriel", student.full_name()])
+    writer.writerow(["Bilan trimestriel", _csv_safe(student.full_name())])
     writer.writerow(["Periode", start_date.isoformat(), end_date.isoformat()])
     writer.writerow([])
     writer.writerow(["Sessions", len(sessions)])
@@ -2016,15 +2033,16 @@ def export_quarter_report(student_id: int):
     writer.writerow(["Evolution par theme"])
     writer.writerow(["Theme", "Questions", "Bonnes reponses", "Taux (%)"])
     for item in theme_summary:
-        writer.writerow([item["domain"], item["total"], item["correct"], item["rate"]])
+        writer.writerow([_csv_safe(item["domain"]), item["total"], item["correct"], item["rate"]])
     if recurring_errors:
         writer.writerow([])
         writer.writerow(["Erreurs recurrentes"])
         writer.writerow(["Question", "Occurrences", "Categorie"])
         for error in recurring_errors:
-            writer.writerow([error["prompt"], error["count"], error["category"]])
+            writer.writerow([_csv_safe(error["prompt"]), error["count"], _csv_safe(error["category"])])
 
-    filename = f"bilan_{student.first_name}_{year_value}_T{quarter_value}.csv"
+    safe_fname = re.sub(r"[^a-zA-Z0-9_\-]", "_", student.first_name)
+    filename = f"bilan_{safe_fname}_{year_value}_T{quarter_value}.csv"
     return current_app.response_class(
         output.getvalue(),
         mimetype="text/csv",
@@ -2144,6 +2162,8 @@ def import_exercises():
         title = request.form.get("title", "").strip() or "Import de questions"
         student_id = request.form.get("student_id")
         import_format = request.form.get("format", "csv")
+        if import_format not in {"anki", "csv"}:
+            import_format = "csv"
         delimiter = request.form.get("delimiter", ",").strip() or ","
         instructions_fr = sanitize_text_input(request.form.get("instructions_fr", "")) or None
         instructions_en = sanitize_text_input(request.form.get("instructions_en", "")) or None
@@ -2481,11 +2501,6 @@ def delete_session(session_id: int):
     db.session.commit()
 
     flash("La session a été supprimée.", "success")
-
-    next_url = request.form.get("next")
-    if next_url and next_url.startswith("/"):
-        return redirect(next_url)
-
     return redirect(url_for("main.view_student", student_id=student_id))
 
 
@@ -2769,10 +2784,21 @@ def admin_openai_prompt_edit(prompt_key: str):
         max_tokens_raw = request.form.get("max_output_tokens", "").strip()
         is_active = bool(request.form.get("is_active"))
 
+        def _validate_template(tmpl: str) -> bool:
+            try:
+                _safe_format(tmpl)
+            except ValueError:
+                return False
+            except (KeyError, IndexError):
+                pass
+            return True
+
         if not display_name:
             flash("Le nom d'affichage est requis.", "warning")
         elif not system_prompt or not user_prompt_template:
             flash("Le prompt système et le prompt utilisateur sont requis.", "warning")
+        elif not _validate_template(system_prompt) or not _validate_template(user_prompt_template):
+            flash("Le template contient des placeholders non autorisés (accès attribut/index interdit).", "danger")
         else:
             prompt.display_name = display_name
             prompt.description = description or None

@@ -51,15 +51,34 @@ services:
   backup:
     image: alpine:3.20
     restart: unless-stopped
+    environment:
+      - BACKUP_ENCRYPTION_KEY=${BACKUP_ENCRYPTION_KEY}
     volumes:
       - app_data:/data:ro
       - ./backups:/backups
+    security_opt:
+      - no-new-privileges:true
+    read_only: true
+    tmpfs:
+      - /tmp
     entrypoint: ["/bin/sh","-c"]
     command: >
-      'while true; do
+      'apk add --no-cache sqlite openssl 2>/dev/null;
+       while true; do
          TS=$(date +%F_%H-%M-%S);
-         sqlite3 /data/app.db ".backup /backups/app_${TS}.sqlite";
-         find /backups -type f -name "app_*.sqlite" -mtime +14 -delete;
+         TMP=/tmp/app_${TS}.sqlite;
+         sqlite3 /data/app.db ".backup ${TMP}";
+         if [ -n "$BACKUP_ENCRYPTION_KEY" ]; then
+           openssl enc -aes-256-cbc -pbkdf2 -pass env:BACKUP_ENCRYPTION_KEY \
+             -in ${TMP} -out /backups/app_${TS}.sqlite.enc;
+           rm -f ${TMP};
+           chmod 600 /backups/app_${TS}.sqlite.enc;
+           find /backups -type f -name "app_*.sqlite.enc" -mtime +14 -delete;
+         else
+           mv ${TMP} /backups/app_${TS}.sqlite;
+           chmod 600 /backups/app_${TS}.sqlite;
+           find /backups -type f -name "app_*.sqlite" -mtime +14 -delete;
+         fi;
          sleep 86400;
        done'
 

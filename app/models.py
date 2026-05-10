@@ -1,3 +1,5 @@
+import re
+import string
 from datetime import datetime
 from decimal import Decimal
 from typing import Dict, Optional, Sequence
@@ -7,6 +9,20 @@ from sqlalchemy.exc import IntegrityError
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from . import db
+
+_SIMPLE_PLACEHOLDER = re.compile(r'^\w+$')
+
+
+def _safe_format(template: str, **ctx) -> str:
+    """Variante sécurisée de str.format() : n'autorise que les identifiants
+    simples (pas d'accès attribut/index) pour prévenir l'injection SSTI."""
+    for _, field_name, _, _ in string.Formatter().parse(template):
+        if field_name is None:
+            continue
+        base = field_name.split('.')[0].split('[')[0]
+        if not _SIMPLE_PLACEHOLDER.match(base) or '.' in field_name or '[' in field_name:
+            raise ValueError(f"Placeholder non autorisé : {{{field_name}}}")
+    return template.format(**ctx)
 
 
 class TimestampMixin:
@@ -864,14 +880,14 @@ class OpenAIPrompt(db.Model, TimestampMixin):
         return data if isinstance(data, list) else []
 
     def render_user_prompt(self, **ctx) -> str:
-        """Rend ``user_prompt_template`` avec ``str.format``.
+        """Rend ``user_prompt_template`` de façon sécurisée.
 
-        En cas de ``KeyError`` (template invalide après édition admin),
-        retombe sur la valeur par défaut hardcodée pour ne pas casser la
-        génération.
+        Utilise ``_safe_format`` qui rejette tout accès attribut/index dans
+        les placeholders pour prévenir l'injection SSTI. En cas d'erreur,
+        retombe sur le template par défaut.
         """
         try:
-            return self.user_prompt_template.format(**ctx)
+            return _safe_format(self.user_prompt_template, **ctx)
         except (KeyError, IndexError, ValueError):
             from .services.ai_generator import _DEFAULT_PROMPTS
 
@@ -879,14 +895,14 @@ class OpenAIPrompt(db.Model, TimestampMixin):
             if not defaults:
                 return self.user_prompt_template
             try:
-                return defaults["user_prompt_template"].format(**ctx)
+                return _safe_format(defaults["user_prompt_template"], **ctx)
             except (KeyError, IndexError, ValueError):
                 return defaults["user_prompt_template"]
 
     def render_system_prompt(self, **ctx) -> str:
-        """Rend ``system_prompt`` avec ``str.format`` (fallback identique)."""
+        """Rend ``system_prompt`` de façon sécurisée (fallback identique)."""
         try:
-            return self.system_prompt.format(**ctx)
+            return _safe_format(self.system_prompt, **ctx)
         except (KeyError, IndexError, ValueError):
             from .services.ai_generator import _DEFAULT_PROMPTS
 
@@ -894,7 +910,7 @@ class OpenAIPrompt(db.Model, TimestampMixin):
             if not defaults:
                 return self.system_prompt
             try:
-                return defaults["system_prompt"].format(**ctx)
+                return _safe_format(defaults["system_prompt"], **ctx)
             except (KeyError, IndexError, ValueError):
                 return defaults["system_prompt"]
 

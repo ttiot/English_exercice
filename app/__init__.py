@@ -6,6 +6,8 @@ from pathlib import Path
 from typing import Iterator
 
 from flask import Flask, g
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 from flask_wtf import CSRFProtect
@@ -18,6 +20,7 @@ from .config import Config
 db = SQLAlchemy()
 migrate = Migrate()
 csrf = CSRFProtect()
+limiter = Limiter(key_func=get_remote_address, default_limits=[])
 
 
 @contextmanager
@@ -54,6 +57,7 @@ def create_app():
     db.init_app(app)
     migrate.init_app(app, db)
     csrf.init_app(app)
+    limiter.init_app(app)
 
     # Importe tes modèles/routes
     from . import models  # noqa: F401
