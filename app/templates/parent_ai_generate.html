@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% block title %}Générer des exercices IA — {{ student.full_name() }}{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+    <h2 style="margin:0;">Générer des exercices IA pour {{ student.full_name() }}</h2>
+    <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">← Retour au profil</a>
+  </div>
+
+  <p class="muted">
+    Décris le sujet ou les compétences que tu veux travailler. L'IA génèrera des exercices qui seront proposés à {{ student.first_name }} lors de sa prochaine session.
+  </p>
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="student_prompt" style="display:block; margin-bottom:0.4rem; font-weight:600;">Sur quoi travailler ?</label>
+      <textarea
+        id="student_prompt"
+        name="student_prompt"
+        rows="3"
+        maxlength="500"
+        required
+        placeholder="Ex : la nourriture et les repas, en utilisant du vocabulaire de niveau A1."
+        style="width:100%;"
+      >{{ (form_data.student_prompt if form_data else '') | e }}</textarea>
+      <p class="muted" style="font-size:0.82rem; margin-top:0.25rem;">Entre 5 et 500 caractères.</p>
+    </div>
+
+    <div style="display:flex; gap:1.5rem; flex-wrap:wrap; margin-bottom:1.5rem;">
+      <div>
+        <label for="difficulty" style="display:block; margin-bottom:0.4rem; font-weight:600;">Niveau</label>
+        <select id="difficulty" name="difficulty">
+          {% set current_diff = form_data.difficulty if form_data else 'beginner' %}
+          {% for key, label in difficulty_labels.items() %}
+            {% if key in ('beginner', 'intermediate', 'advanced') %}
+              <option value="{{ key }}" {% if key == current_diff %}selected{% endif %}>{{ label }}</option>
+            {% endif %}
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label for="question_count" style="display:block; margin-bottom:0.4rem; font-weight:600;">Nombre d'exercices</label>
+        <input
+          type="number"
+          id="question_count"
+          name="question_count"
+          min="5"
+          max="25"
+          value="{{ (form_data.question_count if form_data else 10) }}"
+          style="width:5rem;"
+        />
+        <span class="muted" style="font-size:0.85rem; margin-left:0.4rem;">entre 5 et 25</span>
+      </div>
+    </div>
+
+    <div style="background:var(--surface-2,#1e2030); border-radius:8px; padding:0.9rem 1.1rem; margin-bottom:1.5rem;">
+      <p class="muted" style="margin:0; font-size:0.88rem;">
+        ℹ️ Les exercices générés seront ajoutés en tant que <strong>session préparée</strong> et proposés automatiquement lors de la prochaine session de {{ student.first_name }}.
+      </p>
+    </div>
+
+    <button type="submit" class="btn btn-primary">Générer les exercices</button>
+  </form>
+</div>
+
+{% endblock %}

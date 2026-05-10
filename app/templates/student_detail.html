@@ -67,6 +67,9 @@
     </div>
 
     {% if parent_ok %}
+      <div style="margin-top:0.75rem;">
+        <a class="btn btn-secondary" href="{{ url_for('main.parent_generate_ai_exercises', student_id=student.id) }}">✨ Générer des exercices IA</a>
+      </div>
       <p class="muted" style="font-size:0.82rem; margin-top:0.75rem;">
         Bilan :
         <a href="{{ url_for('main.export_quarter_report', student_id=student.id, format='csv') }}">CSV</a> •
