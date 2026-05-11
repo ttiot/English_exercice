@@ -3611,3 +3611,168 @@ def toggle_exercise_item_active(item_id: int):
     db.session.commit()
     flash("Exercice réactivé." if item.is_active else "Exercice désactivé.", "success" if item.is_active else "info")
     return redirect(url_for("main.list_all_exercises"))
+
+
+def _parse_selected_items(form) -> List[Tuple[str, int]]:
+    items = []
+    i = 0
+    while True:
+        item_type = form.get(f"item_{i}_type")
+        item_id_raw = form.get(f"item_{i}_id")
+        if item_type is None and item_id_raw is None:
+            break
+        try:
+            items.append((item_type, int(item_id_raw)))
+        except (TypeError, ValueError):
+            pass
+        i += 1
+    return items
+
+
+@bp.route("/parents/exercises/batch-edit", methods=["POST"])
+@_parent_required
+def batch_edit_exercises():
+    items_raw = _parse_selected_items(request.form)
+
+    if not items_raw:
+        flash("Aucun exercice sélectionné.", "warning")
+        return redirect(url_for("main.list_all_exercises", **_preserve_filters(request.form)))
+
+    exercises = []
+    for item_type, item_id in items_raw:
+        if item_type == "session":
+            ex = SessionExercise.query.get(item_id)
+            if ex:
+                sess = ex.session
+                exercises.append({
+                    "index": len(exercises),
+                    "type": "session",
+                    "id": ex.id,
+                    "prompt": ex.prompt,
+                    "answer": ex.correct_answer,
+                    "category_code": ex.category,
+                    "difficulty": None,
+                    "context": f"Session du {sess.started_at.strftime('%d/%m/%Y')}" if sess else "",
+                })
+        elif item_type == "prepared":
+            ex = PreparedExerciseQuestion.query.get(item_id)
+            if ex:
+                es = ex.exercise_set
+                exercises.append({
+                    "index": len(exercises),
+                    "type": "prepared",
+                    "id": ex.id,
+                    "prompt": ex.prompt,
+                    "answer": ex.answer,
+                    "category_code": ex.category_code,
+                    "difficulty": None,
+                    "context": f"Série : {es.title}" if es else "",
+                })
+        elif item_type == "bank":
+            ex = ExerciseItem.query.get(item_id)
+            if ex:
+                exercises.append({
+                    "index": len(exercises),
+                    "type": "bank",
+                    "id": ex.id,
+                    "prompt": ex.prompt,
+                    "answer": ex.answer,
+                    "category_code": ex.category.code if ex.category else "",
+                    "difficulty": ex.difficulty,
+                    "context": "",
+                })
+
+    if not exercises:
+        flash("Les exercices sélectionnés sont introuvables.", "warning")
+        return redirect(url_for("main.list_all_exercises"))
+
+    categories = QuestionCategory.query.order_by(
+        QuestionCategory.order_index, QuestionCategory.name
+    ).all()
+    back_url = url_for("main.list_all_exercises", **_preserve_filters(request.form))
+
+    return render_template(
+        "batch_edit_exercises.html",
+        exercises=exercises,
+        categories=categories,
+        difficulty_choices=DIFFICULTY_CHOICES,
+        difficulty_display=DIFFICULTY_DISPLAY,
+        back_url=back_url,
+    )
+
+
+@bp.route("/parents/exercises/batch-save", methods=["POST"])
+@_parent_required
+def batch_save_exercises():
+    back_url = request.form.get("back_url") or url_for("main.list_all_exercises")
+    if not is_safe_url(back_url):
+        back_url = url_for("main.list_all_exercises")
+
+    categories = QuestionCategory.query.all()
+    cat_by_code = {c.code: c for c in categories}
+    valid_cat_codes = set(cat_by_code.keys())
+    valid_diffs = set(DIFFICULTY_LEVELS) | {"any"}
+
+    updated = 0
+    errors = []
+    i = 0
+    while True:
+        item_type = request.form.get(f"exercise_{i}_type")
+        item_id_raw = request.form.get(f"exercise_{i}_id")
+        if item_type is None and item_id_raw is None:
+            break
+        try:
+            item_id = int(item_id_raw)
+        except (TypeError, ValueError):
+            i += 1
+            continue
+
+        prompt = sanitize_text_input(request.form.get(f"exercise_{i}_prompt", ""))
+        answer = sanitize_text_input(request.form.get(f"exercise_{i}_answer", ""))
+        category_code = (request.form.get(f"exercise_{i}_category") or "").strip()
+        difficulty_raw = (request.form.get(f"exercise_{i}_difficulty") or "").strip()
+
+        valid, msg = validate_question_content(prompt, answer)
+        if not valid:
+            errors.append(f"Q{i + 1} : {msg}")
+            i += 1
+            continue
+
+        if item_type == "session":
+            ex = SessionExercise.query.get(item_id)
+            if ex:
+                ex.prompt = prompt
+                ex.correct_answer = answer
+                if category_code in valid_cat_codes:
+                    ex.category = category_code
+                updated += 1
+        elif item_type == "prepared":
+            ex = PreparedExerciseQuestion.query.get(item_id)
+            if ex:
+                ex.prompt = prompt
+                ex.answer = answer
+                if category_code in valid_cat_codes:
+                    ex.category_code = category_code
+                updated += 1
+        elif item_type == "bank":
+            ex = ExerciseItem.query.get(item_id)
+            if ex:
+                ex.prompt = prompt
+                ex.answer = answer
+                cat = cat_by_code.get(category_code)
+                if cat:
+                    ex.category_id = cat.id
+                if difficulty_raw in valid_diffs:
+                    ex.difficulty = difficulty_raw
+                updated += 1
+
+        i += 1
+
+    db.session.commit()
+
+    for err in errors:
+        flash(err, "warning")
+    if updated:
+        flash(f"{updated} exercice(s) sauvegardé(s).", "success")
+
+    return redirect(back_url)

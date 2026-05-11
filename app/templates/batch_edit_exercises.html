@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% block title %}Modifier les exercices{% endblock %}
+{% block content %}
+
+<div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+  <h2 style="margin:0;">Modifier {{ exercises | length }} exercice(s)</h2>
+  <a class="btn btn-secondary" href="{{ back_url }}">← Retour</a>
+</div>
+
+<form method="post" action="{{ url_for('main.batch_save_exercises') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <input type="hidden" name="back_url" value="{{ back_url | e }}" />
+
+  {% for ex in exercises %}
+  {% set i = ex.index %}
+  <input type="hidden" name="exercise_{{ i }}_type" value="{{ ex.type }}" />
+  <input type="hidden" name="exercise_{{ i }}_id" value="{{ ex.id }}" />
+
+  <div class="card" style="margin-bottom:1.25rem; position:relative;">
+    <div style="display:flex; justify-content:space-between; align-items:flex-start; flex-wrap:wrap; gap:0.5rem; margin-bottom:1rem;">
+      <div style="display:flex; align-items:center; gap:0.75rem;">
+        <span style="font-size:1rem; font-weight:700; color:var(--muted);">Q{{ i + 1 }}</span>
+        {% if ex.type == 'session' %}
+          <span style="background:var(--info,#3b82f6); color:#fff; font-size:0.75rem; padding:0.15rem 0.6rem; border-radius:4px;">Session</span>
+        {% elif ex.type == 'prepared' %}
+          <span style="background:var(--warning,#f59e0b); color:#000; font-size:0.75rem; padding:0.15rem 0.6rem; border-radius:4px;">Préparé</span>
+        {% else %}
+          <span style="background:var(--success,#10b981); color:#fff; font-size:0.75rem; padding:0.15rem 0.6rem; border-radius:4px;">Banque</span>
+        {% endif %}
+      </div>
+      {% if ex.context %}
+        <span class="muted" style="font-size:0.8rem;">{{ ex.context | e }}</span>
+      {% endif %}
+    </div>
+
+    <div style="display:grid; gap:1rem;">
+      <div>
+        <label for="prompt_{{ i }}" style="display:block; font-weight:600; margin-bottom:0.35rem; font-size:0.9rem;">Question</label>
+        <textarea
+          id="prompt_{{ i }}"
+          name="exercise_{{ i }}_prompt"
+          rows="3"
+          maxlength="1000"
+          required
+          style="width:100%; resize:vertical;"
+        >{{ ex.prompt | e }}</textarea>
+      </div>
+
+      <div style="display:grid; grid-template-columns: 1fr 1fr; gap:1rem;">
+        <div>
+          <label for="answer_{{ i }}" style="display:block; font-weight:600; margin-bottom:0.35rem; font-size:0.9rem;">Réponse attendue</label>
+          <input
+            type="text"
+            id="answer_{{ i }}"
+            name="exercise_{{ i }}_answer"
+            maxlength="255"
+            required
+            value="{{ ex.answer | e }}"
+            style="width:100%;"
+          />
+        </div>
+
+        <div>
+          <label for="category_{{ i }}" style="display:block; font-weight:600; margin-bottom:0.35rem; font-size:0.9rem;">Catégorie</label>
+          <select id="category_{{ i }}" name="exercise_{{ i }}_category" style="width:100%;">
+            {% for cat in categories %}
+              <option value="{{ cat.code }}" {% if cat.code == ex.category_code %}selected{% endif %}>{{ cat.name | e }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      {% if ex.type == 'bank' %}
+      <div style="max-width:280px;">
+        <label for="difficulty_{{ i }}" style="display:block; font-weight:600; margin-bottom:0.35rem; font-size:0.9rem;">Difficulté</label>
+        <select id="difficulty_{{ i }}" name="exercise_{{ i }}_difficulty" style="width:100%;">
+          <option value="any" {% if ex.difficulty == 'any' %}selected{% endif %}>Indifférent</option>
+          {% for code, label in difficulty_choices %}
+            <option value="{{ code }}" {% if code == ex.difficulty %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      {% else %}
+      <input type="hidden" name="exercise_{{ i }}_difficulty" value="" />
+      {% endif %}
+    </div>
+  </div>
+  {% endfor %}
+
+  <div style="position:sticky; bottom:0; background:var(--bg,#0f1117); padding:1rem 0; border-top:1px solid var(--border,#2a2d3e); display:flex; gap:0.75rem; flex-wrap:wrap; z-index:10;">
+    <button type="submit" class="btn btn-primary">Sauvegarder {{ exercises | length }} exercice(s)</button>
+    <a class="btn btn-secondary" href="{{ back_url }}">Annuler</a>
+  </div>
+</form>
+
+{% endblock %}

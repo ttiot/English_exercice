@@ -73,7 +73,7 @@
   </form>
 </div>
 
-<form method="post" action="{{ url_for('main.bulk_edit_exercises') }}" id="bulk-form">
+<form method="post" action="{{ url_for('main.batch_edit_exercises') }}" id="bulk-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <input type="hidden" name="type" value="{{ filter_type | e }}" />
   <input type="hidden" name="q" value="{{ filter_q | e }}" />
@@ -86,13 +86,7 @@
   <div class="card">
     <div id="bulk-controls" style="display:none; margin-bottom:1rem; padding:0.75rem; background:var(--surface-2,#1e2030); border-radius:8px;">
       <span style="font-weight:600;" id="bulk-count">0</span> exercice(s) sélectionné(s) —
-      Modifier :
-      <select name="bulk_field" id="bulk-field" style="margin:0 0.5rem;">
-        <option value="category">Catégorie</option>
-        <option value="difficulty">Difficulté</option>
-      </select>
-      <select name="bulk_value" id="bulk-value-select" style="margin-right:0.5rem;"></select>
-      <button class="btn btn-primary btn-small" type="submit">Appliquer</button>
+      <button class="btn btn-primary btn-small" type="submit" style="margin-left:0.5rem;">Modifier la sélection</button>
     </div>
 
     {% if items %}
@@ -200,32 +194,10 @@
 {{ super() }}
 <script>
 (function () {
-  var CATEGORY_OPTIONS = [
-    {% for cat in all_categories %}
-    { value: {{ cat.code | tojson }}, label: {{ cat.name | tojson }} },
-    {% endfor %}
-  ];
-  var DIFFICULTY_OPTIONS = [
-    {% for code, label in difficulty_choices %}
-    { value: {{ code | tojson }}, label: {{ label | tojson }} },
-    {% endfor %}
-  ];
-
   var bulkForm = document.getElementById('bulk-form');
   var controls = document.getElementById('bulk-controls');
   var countLabel = document.getElementById('bulk-count');
-  var bulkField = document.getElementById('bulk-field');
-  var bulkValue = document.getElementById('bulk-value-select');
   var selectAll = document.getElementById('select-all');
-
-  function populateBulkValue() {
-    var opts = bulkField.value === 'category' ? CATEGORY_OPTIONS : DIFFICULTY_OPTIONS;
-    bulkValue.innerHTML = opts.map(function (o) {
-      return '<option value="' + o.value + '">' + o.label + '</option>';
-    }).join('');
-  }
-  populateBulkValue();
-  bulkField.addEventListener('change', populateBulkValue);
 
   function refreshBulkUI() {
     var checked = document.querySelectorAll('.row-check:checked');
