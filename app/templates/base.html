@@ -41,13 +41,14 @@
         <a class="nav-tab{% if request.endpoint == 'main.list_all_exercises' %} active{% endif %}"
            href="{{ url_for('main.list_all_exercises') }}">Exercices</a>
         <div class="nav-tab-dropdown">
-          <span class="nav-tab{% if request.endpoint in ('main.parent_dashboard', 'main.admin_openai_hub') %} active{% endif %}">
+          <span class="nav-tab{% if request.endpoint in ('main.parent_dashboard', 'main.admin_openai_hub', 'main.admin_email_config') %} active{% endif %}">
             Espace Parents <span class="dropdown-arrow">▾</span>
           </span>
           <div class="nav-dropdown-menu">
             <a class="nav-dropdown-item" href="{{ url_for('main.parent_dashboard') }}">Espace Parents</a>
             {% if current_user.is_admin() %}
               <a class="nav-dropdown-item" href="{{ url_for('main.admin_openai_hub') }}">Administration IA</a>
+              <a class="nav-dropdown-item" href="{{ url_for('main.admin_email_config') }}">Configuration e-mail</a>
             {% endif %}
           </div>
         </div>
