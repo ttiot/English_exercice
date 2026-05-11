@@ -55,6 +55,7 @@ from .models import (
     AIGeneratedExercise,
     AppConfig,
     Badge,
+    EmailConfig,
     OpenAIConfig,
     OpenAIPrompt,
     _safe_format,
@@ -1048,6 +1049,84 @@ def logout():
     return redirect(url_for("main.login"))
 
 
+@bp.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per minute", methods=["POST"])
+def forgot_password():
+    if _current_user():
+        return redirect(url_for("main.index"))
+
+    if request.method == "GET":
+        return render_template("auth/forgot_password.html")
+
+    import hashlib
+    from .email_service import generate_reset_token, send_password_reset_email
+
+    email_raw = sanitize_text_input(request.form.get("email", "")).strip().lower()
+    # Toujours afficher le même message pour éviter l'énumération d'emails
+    flash(
+        "Si cette adresse est associée à un compte, un email de réinitialisation vient d'être envoyé.",
+        "info",
+    )
+
+    if not email_raw or not validate_email(email_raw):
+        return redirect(url_for("main.login"))
+
+    email_config = EmailConfig.get_active()
+    if email_config is None:
+        flash("La réinitialisation par email n'est pas disponible pour le moment.", "warning")
+        return redirect(url_for("main.login"))
+
+    student = Student.query.filter_by(email=email_raw).first()
+    if student:
+        token, token_hash = generate_reset_token()
+        student.reset_token_hash = token_hash
+        student.reset_token_expires_at = datetime.utcnow() + timedelta(hours=1)
+        db.session.commit()
+        reset_url = url_for("main.reset_password", token=token, _external=True)
+        send_password_reset_email(student, token, reset_url)
+
+    return redirect(url_for("main.login"))
+
+
+@bp.route("/reset-password/<token>", methods=["GET", "POST"])
+@limiter.limit("10 per minute")
+def reset_password(token: str):
+    import hashlib
+    from .validators import validate_password
+
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    student = Student.query.filter(
+        Student.reset_token_hash == token_hash,
+        Student.reset_token_expires_at > datetime.utcnow(),
+    ).first()
+
+    if not student:
+        flash("Lien de réinitialisation invalide ou expiré.", "danger")
+        return redirect(url_for("main.forgot_password"))
+
+    if request.method == "GET":
+        return render_template("auth/reset_password.html", token=token)
+
+    new_password = request.form.get("new_password", "")
+    confirm_password = request.form.get("confirm_password", "")
+
+    if new_password != confirm_password:
+        flash("Les mots de passe ne correspondent pas.", "danger")
+        return render_template("auth/reset_password.html", token=token)
+
+    valid, msg = validate_password(new_password)
+    if not valid:
+        flash(msg, "danger")
+        return render_template("auth/reset_password.html", token=token)
+
+    student.set_password(new_password)
+    student.reset_token_hash = None
+    student.reset_token_expires_at = None
+    db.session.commit()
+    flash("Mot de passe réinitialisé avec succès. Vous pouvez vous connecter.", "success")
+    return redirect(url_for("main.login"))
+
+
 @bp.route("/students/new", methods=["GET", "POST"])
 @_parent_required
 def create_student():
@@ -1755,6 +1834,13 @@ def play_session(session_id: int):
             "xp_gained": xp_gained,
             "new_badge_names": [sb.badge.name for sb in new_sbs],
         }
+
+        try:
+            from .email_service import send_session_completion_email
+            send_session_completion_email(session_obj)
+        except Exception:
+            pass
+
         flash("Session terminée ! Voici ton score.", "success")
         return redirect(url_for("main.session_summary", session_id=session_obj.id))
 
@@ -3061,4 +3147,60 @@ def admin_system_config():
         "admin/app_config.html",
         app_config=app_config,
         has_backup_key=has_backup_key,
+    )
+
+
+@bp.route("/admin/email/config", methods=["GET", "POST"])
+@_admin_required
+def admin_email_config():
+    """Configuration du serveur SMTP pour l'envoi d'emails."""
+    from .email_service import send_email, test_smtp_connection
+
+    config = EmailConfig.get_or_create()
+    test_result = None
+
+    if request.method == "POST":
+        action = request.form.get("action", "save")
+
+        if action == "save":
+            config.host = sanitize_text_input(request.form.get("host", "")).strip()
+            try:
+                config.port = int(request.form.get("port") or 587)
+            except ValueError:
+                config.port = 587
+            config.use_tls = request.form.get("use_tls") == "on"
+            config.use_ssl = request.form.get("use_ssl") == "on"
+            config.username = sanitize_text_input(request.form.get("username", "")).strip()
+            pwd = request.form.get("password", "").strip()
+            if pwd:
+                config.set_password(pwd)
+            config.from_address = sanitize_text_input(request.form.get("from_address", "")).strip()
+            config.from_name = sanitize_text_input(request.form.get("from_name", "")).strip()
+            config.is_active = request.form.get("is_active") == "on"
+            db.session.commit()
+            flash("Configuration email enregistrée.", "success")
+            return redirect(url_for("main.admin_email_config"))
+
+        elif action == "test":
+            success, msg = test_smtp_connection(config)
+            if success and current_student.email:
+                send_email(
+                    current_student.email,
+                    "Test email — English Explorer",
+                    "<p>La configuration SMTP fonctionne correctement ✓</p>",
+                    "La configuration SMTP fonctionne correctement.",
+                )
+                msg += f" Un email de test a été envoyé à {current_student.email}."
+            test_result = {"success": success, "message": msg}
+
+        elif action == "clear_password":
+            config.set_password(None)
+            db.session.commit()
+            flash("Mot de passe SMTP supprimé.", "info")
+            return redirect(url_for("main.admin_email_config"))
+
+    return render_template(
+        "admin/email_config.html",
+        config=config,
+        test_result=test_result,
     )

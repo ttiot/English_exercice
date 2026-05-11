@@ -52,6 +52,8 @@ class Student(db.Model, TimestampMixin):
     preferred_domains = db.Column(db.String(255), nullable=True)
     avatar_filename = db.Column(db.String(255), nullable=True)
     password_hash = db.Column("pin_hash", db.String(255), nullable=False)
+    reset_token_hash = db.Column(db.String(255), nullable=True)
+    reset_token_expires_at = db.Column(db.DateTime, nullable=True)
 
     sessions = db.relationship("PracticeSession", backref="student", lazy=True)
 
@@ -486,6 +488,71 @@ class AppConfig(db.Model, TimestampMixin):
         config = AppConfig.query.first()
         if not config:
             config = AppConfig()
+            db.session.add(config)
+            db.session.commit()
+        return config
+
+
+class EmailConfig(db.Model, TimestampMixin):
+    """Singleton de configuration SMTP pour l'envoi d'emails (mot de passe oublié, fin de session…).
+
+    Le mot de passe SMTP est chiffré avec Fernet (même clé que OpenAIConfig).
+    Si `is_active` est False, aucun email n'est envoyé.
+    """
+
+    __tablename__ = "email_config"
+
+    id = db.Column(db.Integer, primary_key=True)
+    host = db.Column(db.String(255), nullable=False, default="")
+    port = db.Column(db.Integer, default=587)
+    use_tls = db.Column(db.Boolean, default=True)   # STARTTLS
+    use_ssl = db.Column(db.Boolean, default=False)  # SSL/TLS direct
+    username = db.Column(db.String(255), nullable=True)
+    password_encrypted = db.Column(db.Text, nullable=True)
+    from_address = db.Column(db.String(255), nullable=True)
+    from_name = db.Column(db.String(100), nullable=True, default="English Explorer")
+    is_active = db.Column(db.Boolean, default=False, nullable=False)
+
+    def set_password(self, password: Optional[str]) -> None:
+        """Chiffre et stocke le mot de passe SMTP. Vide/None supprime."""
+        if not password:
+            self.password_encrypted = None
+            return
+        from cryptography.fernet import Fernet
+        from flask import current_app
+        fernet_key = current_app.config.get("FERNET_KEY")
+        if not fernet_key:
+            current_app.logger.warning("FERNET_KEY non définie, mot de passe SMTP non chiffré.")
+            return
+        if isinstance(fernet_key, str):
+            fernet_key = fernet_key.encode()
+        self.password_encrypted = Fernet(fernet_key).encrypt(password.encode()).decode()
+
+    def get_password(self) -> Optional[str]:
+        """Retourne le mot de passe SMTP en clair, ou None si absent/illisible."""
+        if not self.password_encrypted:
+            return None
+        from cryptography.fernet import Fernet
+        from flask import current_app
+        fernet_key = current_app.config.get("FERNET_KEY")
+        if not fernet_key:
+            return None
+        if isinstance(fernet_key, str):
+            fernet_key = fernet_key.encode()
+        try:
+            return Fernet(fernet_key).decrypt(self.password_encrypted.encode()).decode()
+        except Exception:
+            return None
+
+    @staticmethod
+    def get_active() -> Optional["EmailConfig"]:
+        return EmailConfig.query.filter_by(is_active=True).first()
+
+    @staticmethod
+    def get_or_create() -> "EmailConfig":
+        config = EmailConfig.query.first()
+        if not config:
+            config = EmailConfig()
             db.session.add(config)
             db.session.commit()
         return config
@@ -1420,6 +1487,18 @@ def ensure_schema_migrations() -> None:
             )
             needs_commit = True
 
+        if "reset_token_hash" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN reset_token_hash VARCHAR(255)")
+            )
+            needs_commit = True
+
+        if "reset_token_expires_at" not in student_columns:
+            db.session.execute(
+                text("ALTER TABLE students ADD COLUMN reset_token_expires_at DATETIME")
+            )
+            needs_commit = True
+
     if "practice_sessions" in table_names:
         session_columns = {
             column["name"] for column in inspector.get_columns("practice_sessions")
@@ -1671,6 +1750,7 @@ __all__ = [
     "SkillPrerequisite",
     "StudentSkillProgress",
     "OpenAIConfig",
+    "EmailConfig",
     "AICallLog",
     "AIGeneratedExercise",
     "ensure_default_badges",

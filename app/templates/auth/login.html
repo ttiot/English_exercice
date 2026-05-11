@@ -11,6 +11,9 @@
       <input id="email" name="email" type="email" required autocomplete="email" />
       <label for="password">Mot de passe *</label>
       <input id="password" name="password" type="password" required autocomplete="current-password" />
+      <p class="muted" style="margin: 0.4rem 0 0.8rem; text-align: right; font-size: 0.9em;">
+        <a href="{{ url_for('main.forgot_password') }}">Mot de passe oublié ?</a>
+      </p>
       <button class="btn btn-primary" type="submit">Se connecter</button>
     </form>
     <p class="muted" style="margin-top: 1rem;">
