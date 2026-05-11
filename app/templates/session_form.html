@@ -96,6 +96,20 @@
       }
       modeSelect.addEventListener('change', refresh);
       refresh();
+
+      const overlay = document.getElementById('loading-overlay');
+      if (overlay) {
+        window.addEventListener('pageshow', () => overlay.classList.remove('active'));
+        const form = modeSelect.closest('form');
+        if (form) {
+          form.addEventListener('submit', () => {
+            if (modeSelect.value === 'ai_custom') {
+              overlay.classList.add('active');
+              overlay.removeAttribute('aria-hidden');
+            }
+          });
+        }
+      }
     })();
   </script>
 {% endblock %}

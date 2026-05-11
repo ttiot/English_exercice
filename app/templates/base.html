@@ -9,6 +9,10 @@
     {% block extra_head %}{% endblock %}
   </head>
   <body>
+    <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
+      <div class="loading-spinner"></div>
+      <p class="loading-message">Génération en cours&hellip;</p>
+    </div>
     <nav class="navbar">
       <div class="navbar-top">
         <h1><a href="{{ url_for('main.index') }}">English Explorer</a></h1>
