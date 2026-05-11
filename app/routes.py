@@ -1766,6 +1766,43 @@ def start_session(student_id: int):
 
         return redirect(url_for("main.play_session", session_id=session_obj.id))
 
+    targeted_set = (
+        PreparedExerciseSet.query.filter_by(is_used=False, student_id=student.id)
+        .order_by(PreparedExerciseSet.created_at.asc())
+        .first()
+    )
+    if targeted_set:
+        session_obj = PracticeSession(
+            student_id=student.id,
+            time_limit_minutes=targeted_set.time_limit_seconds // 60
+                if targeted_set.use_time_limit and targeted_set.time_limit_seconds else None,
+            time_limit_seconds=targeted_set.time_limit_seconds
+                if targeted_set.use_time_limit and targeted_set.time_limit_seconds else None,
+            total_questions=len(targeted_set.questions),
+            difficulty="prepared",
+            session_type="prepared",
+            instructions_fr=targeted_set.instructions_fr,
+            instructions_en=targeted_set.instructions_en,
+        )
+        db.session.add(session_obj)
+        db.session.flush()
+        for index, question in enumerate(targeted_set.questions):
+            db.session.add(
+                SessionExercise(
+                    session_id=session_obj.id,
+                    prompt=question.prompt,
+                    correct_answer=question.answer,
+                    category=question.category_code,
+                    display_order=index,
+                    source="prepared",
+                )
+            )
+        session_obj.total_questions = len(targeted_set.questions)
+        targeted_set.mark_used()
+        db.session.commit()
+        flash(f"Session préparée lancée : {targeted_set.title}", "info")
+        return redirect(url_for("main.play_session", session_id=session_obj.id))
+
     selected_difficulty = normalize_difficulty(request.args.get("difficulty"))
     default_mode = request.args.get("mode", "practice")
     return render_template(
