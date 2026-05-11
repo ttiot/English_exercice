@@ -1,0 +1,114 @@
+{% extends 'base.html' %}
+{% block title %}Configuration email (SMTP){% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Configuration email (SMTP)</h2>
+    <p class="muted">
+      Le mot de passe SMTP est chiffré avec Fernet avant stockage.
+      Laissez le champ vide pour conserver le mot de passe existant.
+      Activez la configuration pour permettre l'envoi d'emails (mot de passe oublié, fin de session…).
+    </p>
+
+    {% if test_result %}
+      <div class="alert alert-{{ 'success' if test_result.success else 'danger' }}">
+        {{ test_result.message }}
+      </div>
+    {% endif %}
+
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+      <label>Serveur SMTP (host)</label>
+      <input
+        type="text"
+        name="host"
+        value="{{ config.host or '' }}"
+        placeholder="smtp.example.com"
+        autocomplete="off"
+      />
+
+      <label>Port</label>
+      <input
+        type="number"
+        name="port"
+        value="{{ config.port or 587 }}"
+        min="1"
+        max="65535"
+        style="width: 10rem;"
+      />
+
+      <label class="checkbox">
+        <input type="checkbox" name="use_tls" {% if config.use_tls %}checked{% endif %} />
+        STARTTLS (recommandé, port 587)
+      </label>
+
+      <label class="checkbox">
+        <input type="checkbox" name="use_ssl" {% if config.use_ssl %}checked{% endif %} />
+        SSL/TLS direct (port 465)
+      </label>
+
+      <label>Identifiant de connexion (login)</label>
+      <input
+        type="text"
+        name="username"
+        value="{{ config.username or '' }}"
+        autocomplete="off"
+      />
+
+      <label>
+        Mot de passe SMTP
+        {% if config.password_encrypted %}<em>(un mot de passe est déjà enregistré)</em>{% endif %}
+      </label>
+      <input
+        type="password"
+        name="password"
+        autocomplete="new-password"
+        placeholder="{% if config.password_encrypted %}laisser vide pour conserver{% else %}mot de passe SMTP{% endif %}"
+      />
+
+      <label>Adresse expéditeur (From)</label>
+      <input
+        type="email"
+        name="from_address"
+        value="{{ config.from_address or '' }}"
+        placeholder="noreply@example.com"
+      />
+
+      <label>Nom affiché de l'expéditeur</label>
+      <input
+        type="text"
+        name="from_name"
+        value="{{ config.from_name or 'English Explorer' }}"
+      />
+
+      <label class="checkbox">
+        <input type="checkbox" name="is_active" {% if config.is_active %}checked{% endif %} />
+        Activer l'envoi d'emails (si désactivé, aucun email n'est envoyé)
+      </label>
+
+      <div class="actions">
+        <button class="btn btn-primary" type="submit" name="action" value="save">
+          Enregistrer
+        </button>
+        <button class="btn btn-secondary" type="submit" name="action" value="test">
+          Tester la connexion et envoyer un email de test
+        </button>
+        {% if config.password_encrypted %}
+          <button
+            class="btn btn-danger"
+            type="submit"
+            name="action"
+            value="clear_password"
+            onclick="return confirm('Supprimer le mot de passe SMTP enregistré ?');"
+          >
+            Supprimer le mot de passe
+          </button>
+        {% endif %}
+      </div>
+    </form>
+
+    <p class="muted" style="margin-top: 1.5rem;">
+      <a href="{{ url_for('main.index') }}">← Accueil</a>
+    </p>
+  </div>
+{% endblock %}
