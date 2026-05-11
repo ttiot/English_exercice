@@ -38,6 +38,8 @@
       <div class="navbar-tabs">
         <a class="nav-tab{% if request.endpoint == 'main.exercise_bank' %} active{% endif %}"
            href="{{ url_for('main.exercise_bank') }}">Banque d'exercices</a>
+        <a class="nav-tab{% if request.endpoint == 'main.list_all_exercises' %} active{% endif %}"
+           href="{{ url_for('main.list_all_exercises') }}">Exercices</a>
         <div class="nav-tab-dropdown">
           <span class="nav-tab{% if request.endpoint in ('main.parent_dashboard', 'main.admin_openai_hub') %} active{% endif %}">
             Espace Parents <span class="dropdown-arrow">▾</span>

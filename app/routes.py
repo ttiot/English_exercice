@@ -3241,3 +3241,373 @@ def admin_email_config():
         config=config,
         test_result=test_result,
     )
+
+
+# ─── Unified Exercise Manager ─────────────────────────────────────────────────
+
+
+def _preserve_filters(source) -> dict:
+    keys = ("type", "q", "domain", "difficulty", "student_id", "date_from", "date_to")
+    return {k: source.get(k) for k in keys if source.get(k)}
+
+
+@bp.route("/parents/exercises")
+@_parent_required
+def list_all_exercises():
+    PER_PAGE = 30
+    try:
+        page = max(int(request.args.get("page", 1) or 1), 1)
+    except (TypeError, ValueError):
+        page = 1
+
+    ex_type = request.args.get("type", "").strip()
+    q = request.args.get("q", "").strip()
+    domain = request.args.get("domain", "").strip()
+    difficulty = request.args.get("difficulty", "").strip()
+    student_id_raw = request.args.get("student_id", "").strip()
+    date_from_raw = request.args.get("date_from", "").strip()
+    date_to_raw = request.args.get("date_to", "").strip()
+
+    domain_category_codes: set = set()
+    if domain:
+        domain_category_codes = {c.code for c in _filter_categories(domain, "", "", "")}
+
+    results = []
+
+    if not ex_type or ex_type == "session":
+        sq = SessionExercise.query.join(PracticeSession)
+        if q:
+            sq = sq.filter(SessionExercise.prompt.ilike(f"%{q}%"))
+        if domain and domain_category_codes:
+            sq = sq.filter(SessionExercise.category.in_(domain_category_codes))
+        if difficulty:
+            sq = sq.filter(PracticeSession.difficulty == difficulty)
+        if student_id_raw:
+            try:
+                sq = sq.filter(PracticeSession.student_id == int(student_id_raw))
+            except (TypeError, ValueError):
+                pass
+        if date_from_raw:
+            try:
+                sq = sq.filter(
+                    PracticeSession.started_at >= datetime.fromisoformat(date_from_raw)
+                )
+            except ValueError:
+                pass
+        if date_to_raw:
+            try:
+                sq = sq.filter(
+                    PracticeSession.started_at <= datetime.fromisoformat(date_to_raw)
+                )
+            except ValueError:
+                pass
+        for ex in sq.all():
+            sess = ex.session
+            results.append({
+                "type": "session",
+                "id": ex.id,
+                "prompt": ex.prompt,
+                "answer": ex.correct_answer,
+                "category_code": ex.category,
+                "difficulty": sess.difficulty if sess else None,
+                "student_id": sess.student_id if sess else None,
+                "date": sess.started_at if sess else None,
+                "edit_url": url_for(
+                    "main.edit_exercise",
+                    session_id=ex.session_id,
+                    exercise_id=ex.id,
+                ),
+                "is_active": None,
+            })
+
+    if not ex_type or ex_type == "prepared":
+        pq = PreparedExerciseQuestion.query
+        if q:
+            pq = pq.filter(PreparedExerciseQuestion.prompt.ilike(f"%{q}%"))
+        if domain and domain_category_codes:
+            pq = pq.filter(
+                PreparedExerciseQuestion.category_code.in_(domain_category_codes)
+            )
+        if student_id_raw:
+            try:
+                sid = int(student_id_raw)
+                pq = pq.join(PreparedExerciseSet).filter(
+                    db.or_(
+                        PreparedExerciseSet.student_id == sid,
+                        PreparedExerciseSet.student_id.is_(None),
+                    )
+                )
+            except (TypeError, ValueError):
+                pass
+        for ex in pq.all():
+            es = ex.exercise_set
+            results.append({
+                "type": "prepared",
+                "id": ex.id,
+                "prompt": ex.prompt,
+                "answer": ex.answer,
+                "category_code": ex.category_code,
+                "difficulty": None,
+                "student_id": es.student_id if es else None,
+                "date": es.created_at if es else ex.created_at,
+                "edit_url": url_for("main.edit_prepared_question", question_id=ex.id),
+                "is_active": None,
+            })
+
+    if not ex_type or ex_type == "bank":
+        bq = ExerciseItem.query
+        if q:
+            bq = bq.filter(ExerciseItem.prompt.ilike(f"%{q}%"))
+        if domain:
+            bq = bq.join(ExerciseItem.category).filter(
+                QuestionCategory.domain == domain
+            )
+        if difficulty:
+            bq = bq.filter(ExerciseItem.difficulty == difficulty)
+        for ex in bq.all():
+            results.append({
+                "type": "bank",
+                "id": ex.id,
+                "prompt": ex.prompt,
+                "answer": ex.answer,
+                "category_code": ex.category.code if ex.category else None,
+                "difficulty": ex.difficulty,
+                "student_id": None,
+                "date": ex.created_at,
+                "edit_url": url_for("main.edit_exercise_item", item_id=ex.id),
+                "is_active": ex.is_active,
+            })
+
+    results.sort(key=lambda r: r["date"] or datetime.min, reverse=True)
+
+    total = len(results)
+    page_items = results[(page - 1) * PER_PAGE: page * PER_PAGE]
+
+    all_codes = {r["category_code"] for r in page_items if r["category_code"]}
+    cat_map: dict = {}
+    if all_codes:
+        cat_map = {
+            c.code: c.name
+            for c in QuestionCategory.query.filter(
+                QuestionCategory.code.in_(all_codes)
+            ).all()
+        }
+    for r in page_items:
+        r["category_name"] = cat_map.get(r["category_code"] or "", r["category_code"] or "—")
+
+    students = (
+        Student.query.filter(Student.role == "student")
+        .order_by(Student.first_name)
+        .all()
+    )
+    student_map = {s.id: s.full_name() for s in students}
+    all_categories = QuestionCategory.query.order_by(
+        QuestionCategory.order_index, QuestionCategory.name
+    ).all()
+
+    return render_template(
+        "exercise_manager.html",
+        items=page_items,
+        total=total,
+        page=page,
+        per_page=PER_PAGE,
+        students=students,
+        student_map=student_map,
+        all_categories=all_categories,
+        domain_choices=DOMAIN_CHOICES,
+        difficulty_choices=DIFFICULTY_CHOICES,
+        difficulty_display=DIFFICULTY_DISPLAY,
+        filter_type=ex_type,
+        filter_q=q,
+        filter_domain=domain,
+        filter_difficulty=difficulty,
+        filter_student_id=student_id_raw,
+        filter_date_from=date_from_raw,
+        filter_date_to=date_to_raw,
+    )
+
+
+@bp.route(
+    "/parents/prepared-questions/<int:question_id>/edit",
+    methods=["GET", "POST"],
+)
+@_parent_required
+def edit_prepared_question(question_id: int):
+    question = PreparedExerciseQuestion.query.get_or_404(question_id)
+    categories = QuestionCategory.query.order_by(
+        QuestionCategory.order_index, QuestionCategory.name
+    ).all()
+
+    if request.method == "POST":
+        prompt = sanitize_text_input(request.form.get("prompt", ""))
+        answer = sanitize_text_input(request.form.get("answer", ""))
+        category_code = (
+            request.form.get("category", question.category_code) or ""
+        ).strip() or question.category_code
+
+        valid, msg = validate_question_content(prompt, answer)
+        if not valid:
+            flash(msg, "danger")
+            return render_template(
+                "edit_prepared_question.html",
+                question=question,
+                categories=categories,
+                form_data={"prompt": prompt, "answer": answer, "category": category_code},
+            )
+
+        known_codes = {c.code for c in categories}
+        if category_code not in known_codes:
+            category_code = question.category_code
+
+        question.prompt = prompt
+        question.answer = answer
+        question.category_code = category_code
+        db.session.commit()
+
+        flash("Question préparée modifiée avec succès.", "success")
+        return redirect(url_for("main.list_all_exercises"))
+
+    return render_template(
+        "edit_prepared_question.html",
+        question=question,
+        categories=categories,
+        form_data=None,
+    )
+
+
+@bp.route(
+    "/parents/exercise-items/<int:item_id>/edit",
+    methods=["GET", "POST"],
+)
+@_parent_required
+def edit_exercise_item(item_id: int):
+    item = ExerciseItem.query.get_or_404(item_id)
+    categories = QuestionCategory.query.order_by(
+        QuestionCategory.order_index, QuestionCategory.name
+    ).all()
+
+    if request.method == "POST":
+        prompt = sanitize_text_input(request.form.get("prompt", ""))
+        answer = sanitize_text_input(request.form.get("answer", ""))
+        category_code = (request.form.get("category", "") or "").strip()
+        difficulty_raw = (request.form.get("difficulty", "") or "").strip()
+        is_active = "is_active" in request.form
+
+        valid, msg = validate_question_content(prompt, answer)
+        if not valid:
+            flash(msg, "danger")
+            return render_template(
+                "edit_exercise_item.html",
+                item=item,
+                categories=categories,
+                difficulty_choices=DIFFICULTY_CHOICES,
+                form_data={
+                    "prompt": prompt,
+                    "answer": answer,
+                    "category": category_code,
+                    "difficulty": difficulty_raw,
+                    "is_active": is_active,
+                },
+            )
+
+        cat = QuestionCategory.query.filter_by(code=category_code).first()
+        if cat:
+            item.category_id = cat.id
+        valid_diffs = set(DIFFICULTY_LEVELS) | {"any"}
+        if difficulty_raw in valid_diffs:
+            item.difficulty = difficulty_raw
+        item.prompt = prompt
+        item.answer = answer
+        item.is_active = is_active
+        db.session.commit()
+
+        flash("Exercice de la banque modifié avec succès.", "success")
+        return redirect(url_for("main.list_all_exercises"))
+
+    return render_template(
+        "edit_exercise_item.html",
+        item=item,
+        categories=categories,
+        difficulty_choices=DIFFICULTY_CHOICES,
+        form_data=None,
+    )
+
+
+@bp.route("/parents/exercises/bulk-edit", methods=["POST"])
+@_parent_required
+def bulk_edit_exercises():
+    bulk_field = (request.form.get("bulk_field") or "").strip()
+    bulk_value = (request.form.get("bulk_value") or "").strip()
+
+    if bulk_field not in ("category", "difficulty"):
+        flash("Champ de modification invalide.", "danger")
+        return redirect(url_for("main.list_all_exercises"))
+
+    all_categories = QuestionCategory.query.all()
+    valid_cat_codes = {c.code for c in all_categories}
+    valid_diffs = set(DIFFICULTY_LEVELS) | {"any"}
+
+    if bulk_field == "category" and bulk_value not in valid_cat_codes:
+        flash("Catégorie invalide.", "danger")
+        return redirect(url_for("main.list_all_exercises"))
+    if bulk_field == "difficulty" and bulk_value not in valid_diffs:
+        flash("Niveau de difficulté invalide.", "danger")
+        return redirect(url_for("main.list_all_exercises"))
+
+    items_to_edit = []
+    i = 0
+    while True:
+        item_type = request.form.get(f"item_{i}_type")
+        item_id_raw = request.form.get(f"item_{i}_id")
+        if item_type is None and item_id_raw is None:
+            break
+        try:
+            items_to_edit.append((item_type, int(item_id_raw)))
+        except (TypeError, ValueError):
+            pass
+        i += 1
+
+    if not items_to_edit:
+        flash("Aucun exercice sélectionné.", "warning")
+        return redirect(url_for("main.list_all_exercises", **_preserve_filters(request.form)))
+
+    cat_by_code = {c.code: c for c in all_categories}
+    updated = 0
+    for item_type, item_id in items_to_edit:
+        if item_type == "session":
+            if bulk_field == "category":
+                ex = SessionExercise.query.get(item_id)
+                if ex:
+                    ex.category = bulk_value
+                    updated += 1
+        elif item_type == "prepared":
+            if bulk_field == "category":
+                ex = PreparedExerciseQuestion.query.get(item_id)
+                if ex:
+                    ex.category_code = bulk_value
+                    updated += 1
+        elif item_type == "bank":
+            ex = ExerciseItem.query.get(item_id)
+            if ex:
+                if bulk_field == "category":
+                    cat = cat_by_code.get(bulk_value)
+                    if cat:
+                        ex.category_id = cat.id
+                        updated += 1
+                elif bulk_field == "difficulty":
+                    ex.difficulty = bulk_value
+                    updated += 1
+
+    db.session.commit()
+    flash(f"{updated} exercice(s) modifié(s).", "success")
+    return redirect(url_for("main.list_all_exercises", **_preserve_filters(request.form)))
+
+
+@bp.route("/parents/exercise-items/<int:item_id>/toggle-active", methods=["POST"])
+@_parent_required
+def toggle_exercise_item_active(item_id: int):
+    item = ExerciseItem.query.get_or_404(item_id)
+    item.is_active = not item.is_active
+    db.session.commit()
+    flash("Exercice réactivé." if item.is_active else "Exercice désactivé.", "success" if item.is_active else "info")
+    return redirect(url_for("main.list_all_exercises"))

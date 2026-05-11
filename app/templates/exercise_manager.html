@@ -1,0 +1,271 @@
+{% extends 'base.html' %}
+{% block title %}Gestionnaire d'exercices{% endblock %}
+{% block content %}
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+    <h2 style="margin:0;">Gestionnaire d'exercices</h2>
+    <span class="muted">{{ total }} exercice(s) au total</span>
+  </div>
+
+  <form method="get" id="filter-form">
+    <div style="display:flex; flex-wrap:wrap; gap:0.75rem; align-items:flex-end;">
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Type</label>
+        <select name="type">
+          <option value="">Tous les types</option>
+          <option value="session" {% if filter_type == 'session' %}selected{% endif %}>Sessions jouées</option>
+          <option value="prepared" {% if filter_type == 'prepared' %}selected{% endif %}>Exercices préparés</option>
+          <option value="bank" {% if filter_type == 'bank' %}selected{% endif %}>Banque personnalisée</option>
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Recherche</label>
+        <input type="text" name="q" value="{{ filter_q | e }}" placeholder="Recherche dans la question…" style="min-width:200px;" />
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Domaine</label>
+        <select name="domain">
+          <option value="">Tous les domaines</option>
+          {% for code, label in domain_choices %}
+            <option value="{{ code }}" {% if filter_domain == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Difficulté</label>
+        <select name="difficulty">
+          <option value="">Toutes</option>
+          {% for code, label in difficulty_choices %}
+            <option value="{{ code }}" {% if filter_difficulty == code %}selected{% endif %}>{{ label }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Élève</label>
+        <select name="student_id">
+          <option value="">Tous les élèves</option>
+          {% for s in students %}
+            <option value="{{ s.id }}" {% if filter_student_id | string == s.id | string %}selected{% endif %}>{{ s.full_name() | e }}</option>
+          {% endfor %}
+        </select>
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Du (sessions)</label>
+        <input type="date" name="date_from" value="{{ filter_date_from | e }}" />
+      </div>
+
+      <div>
+        <label style="display:block; font-size:0.8rem; margin-bottom:0.2rem; color:var(--muted);">Au (sessions)</label>
+        <input type="date" name="date_to" value="{{ filter_date_to | e }}" />
+      </div>
+
+      <div style="display:flex; gap:0.5rem;">
+        <button class="btn btn-primary btn-small" type="submit">Filtrer</button>
+        <a class="btn btn-secondary btn-small" href="{{ url_for('main.list_all_exercises') }}">Réinitialiser</a>
+      </div>
+    </div>
+  </form>
+</div>
+
+<form method="post" action="{{ url_for('main.bulk_edit_exercises') }}" id="bulk-form">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+  <input type="hidden" name="type" value="{{ filter_type | e }}" />
+  <input type="hidden" name="q" value="{{ filter_q | e }}" />
+  <input type="hidden" name="domain" value="{{ filter_domain | e }}" />
+  <input type="hidden" name="difficulty" value="{{ filter_difficulty | e }}" />
+  <input type="hidden" name="student_id" value="{{ filter_student_id | e }}" />
+  <input type="hidden" name="date_from" value="{{ filter_date_from | e }}" />
+  <input type="hidden" name="date_to" value="{{ filter_date_to | e }}" />
+
+  <div class="card">
+    <div id="bulk-controls" style="display:none; margin-bottom:1rem; padding:0.75rem; background:var(--surface-2,#1e2030); border-radius:8px;">
+      <span style="font-weight:600;" id="bulk-count">0</span> exercice(s) sélectionné(s) —
+      Modifier :
+      <select name="bulk_field" id="bulk-field" style="margin:0 0.5rem;">
+        <option value="category">Catégorie</option>
+        <option value="difficulty">Difficulté</option>
+      </select>
+      <select name="bulk_value" id="bulk-value-select" style="margin-right:0.5rem;"></select>
+      <button class="btn btn-primary btn-small" type="submit">Appliquer</button>
+    </div>
+
+    {% if items %}
+    <div style="overflow-x:auto;">
+      <table style="width:100%; border-collapse:collapse; font-size:0.9rem;">
+        <thead>
+          <tr style="border-bottom:1px solid var(--border);">
+            <th style="padding:0.5rem; text-align:left; width:2rem;">
+              <input type="checkbox" id="select-all" title="Tout sélectionner" />
+            </th>
+            <th style="padding:0.5rem; text-align:left;">Type</th>
+            <th style="padding:0.5rem; text-align:left;">Question</th>
+            <th style="padding:0.5rem; text-align:left;">Réponse attendue</th>
+            <th style="padding:0.5rem; text-align:left;">Catégorie</th>
+            <th style="padding:0.5rem; text-align:left;">Difficulté</th>
+            <th style="padding:0.5rem; text-align:left;">Élève</th>
+            <th style="padding:0.5rem; text-align:left; white-space:nowrap;">Date</th>
+            <th style="padding:0.5rem; text-align:left;">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for item in items %}
+          <tr style="border-bottom:1px solid var(--border,#2a2d3e);">
+            <td style="padding:0.5rem;">
+              <input type="checkbox" class="row-check"
+                     data-type="{{ item.type }}"
+                     data-id="{{ item.id }}" />
+            </td>
+            <td style="padding:0.5rem;">
+              {% if item.type == 'session' %}
+                <span class="badge" style="background:var(--info,#3b82f6); color:#fff; font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:4px;">Session</span>
+              {% elif item.type == 'prepared' %}
+                <span class="badge" style="background:var(--warning,#f59e0b); color:#000; font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:4px;">Préparé</span>
+              {% else %}
+                <span class="badge" style="background:var(--success,#10b981); color:#fff; font-size:0.75rem; padding:0.15rem 0.5rem; border-radius:4px;">Banque</span>
+              {% endif %}
+            </td>
+            <td style="padding:0.5rem; max-width:300px; word-break:break-word;">{{ item.prompt | truncate(100) | e }}</td>
+            <td style="padding:0.5rem; max-width:200px; word-break:break-word;">{{ item.answer | truncate(60) | e }}</td>
+            <td style="padding:0.5rem;">{{ item.category_name | e }}</td>
+            <td style="padding:0.5rem;">
+              {% if item.difficulty %}
+                {{ difficulty_display.get(item.difficulty, item.difficulty) }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td style="padding:0.5rem;">
+              {% if item.student_id %}
+                {{ student_map.get(item.student_id, '—') | e }}
+              {% else %}
+                —
+              {% endif %}
+            </td>
+            <td style="padding:0.5rem; white-space:nowrap;">
+              {% if item.date %}{{ item.date.strftime('%d/%m/%Y') }}{% else %}—{% endif %}
+            </td>
+            <td style="padding:0.5rem; white-space:nowrap;">
+              <a href="{{ item.edit_url }}" class="btn btn-small btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.7rem;">Modifier</a>
+              {% if item.type == 'bank' %}
+                <form class="inline-form" method="post"
+                      action="{{ url_for('main.toggle_exercise_item_active', item_id=item.id) }}"
+                      style="display:inline; margin-left:0.25rem;">
+                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+                  <button class="btn btn-small btn-secondary" type="submit" style="font-size:0.75rem; padding:0.2rem 0.7rem;">
+                    {% if item.is_active %}Désactiver{% else %}Activer{% endif %}
+                  </button>
+                </form>
+              {% endif %}
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+      <p class="muted">Aucun exercice ne correspond aux filtres.</p>
+    {% endif %}
+  </div>
+</form>
+
+{% if total > per_page %}
+<div class="card">
+  {% set total_pages = ((total - 1) // per_page + 1) %}
+  {% set base_args = {
+    'type': filter_type, 'q': filter_q, 'domain': filter_domain,
+    'difficulty': filter_difficulty, 'student_id': filter_student_id,
+    'date_from': filter_date_from, 'date_to': filter_date_to
+  } %}
+  <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
+    {% if page > 1 %}
+      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises', page=page-1, **base_args) }}">← Précédent</a>
+    {% endif %}
+    <span class="muted">Page {{ page }} / {{ total_pages }}</span>
+    {% if page < total_pages %}
+      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises', page=page+1, **base_args) }}">Suivant →</a>
+    {% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+{{ super() }}
+<script>
+(function () {
+  var CATEGORY_OPTIONS = [
+    {% for cat in all_categories %}
+    { value: {{ cat.code | tojson }}, label: {{ cat.name | tojson }} },
+    {% endfor %}
+  ];
+  var DIFFICULTY_OPTIONS = [
+    {% for code, label in difficulty_choices %}
+    { value: {{ code | tojson }}, label: {{ label | tojson }} },
+    {% endfor %}
+  ];
+
+  var bulkForm = document.getElementById('bulk-form');
+  var controls = document.getElementById('bulk-controls');
+  var countLabel = document.getElementById('bulk-count');
+  var bulkField = document.getElementById('bulk-field');
+  var bulkValue = document.getElementById('bulk-value-select');
+  var selectAll = document.getElementById('select-all');
+
+  function populateBulkValue() {
+    var opts = bulkField.value === 'category' ? CATEGORY_OPTIONS : DIFFICULTY_OPTIONS;
+    bulkValue.innerHTML = opts.map(function (o) {
+      return '<option value="' + o.value + '">' + o.label + '</option>';
+    }).join('');
+  }
+  populateBulkValue();
+  bulkField.addEventListener('change', populateBulkValue);
+
+  function refreshBulkUI() {
+    var checked = document.querySelectorAll('.row-check:checked');
+    controls.style.display = checked.length > 0 ? 'block' : 'none';
+    countLabel.textContent = checked.length;
+  }
+
+  if (selectAll) {
+    selectAll.addEventListener('change', function (e) {
+      document.querySelectorAll('.row-check').forEach(function (cb) {
+        cb.checked = e.target.checked;
+      });
+      refreshBulkUI();
+    });
+  }
+
+  document.querySelectorAll('.row-check').forEach(function (cb) {
+    cb.addEventListener('change', refreshBulkUI);
+  });
+
+  bulkForm.addEventListener('submit', function (e) {
+    var checked = document.querySelectorAll('.row-check:checked');
+    if (checked.length === 0) {
+      e.preventDefault();
+      return;
+    }
+    bulkForm.querySelectorAll('[data-bulk-item]').forEach(function (el) {
+      el.remove();
+    });
+    checked.forEach(function (cb, i) {
+      ['type', 'id'].forEach(function (attr) {
+        var inp = document.createElement('input');
+        inp.type = 'hidden';
+        inp.name = 'item_' + i + '_' + attr;
+        inp.value = cb.dataset[attr];
+        inp.setAttribute('data-bulk-item', '1');
+        bulkForm.appendChild(inp);
+      });
+    });
+  });
+}());
+</script>
+{% endblock %}

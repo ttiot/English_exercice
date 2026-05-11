@@ -1,0 +1,83 @@
+{% extends 'base.html' %}
+{% block title %}Modifier l'exercice (banque){% endblock %}
+{% block content %}
+
+<div class="card">
+  <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
+    <h2 style="margin:0;">Modifier l'exercice (banque)</h2>
+    <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises') }}">← Retour aux exercices</a>
+  </div>
+
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="prompt" style="display:block; margin-bottom:0.4rem; font-weight:600;">Question</label>
+      <textarea
+        id="prompt"
+        name="prompt"
+        rows="4"
+        maxlength="1000"
+        required
+        style="width:100%;"
+      >{{ (form_data.prompt if form_data else item.prompt) | e }}</textarea>
+    </div>
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="category" style="display:block; margin-bottom:0.4rem; font-weight:600;">Catégorie</label>
+      <select id="category" name="category" style="width:100%; max-width:400px;">
+        {% set current_cat = form_data.category if form_data else (item.category.code if item.category else '') %}
+        {% for cat in categories %}
+          <option value="{{ cat.code }}" {% if cat.code == current_cat %}selected{% endif %}>{{ cat.name | e }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="answer" style="display:block; margin-bottom:0.4rem; font-weight:600;">Bonne réponse</label>
+      <input
+        type="text"
+        id="answer"
+        name="answer"
+        maxlength="255"
+        required
+        value="{{ (form_data.answer if form_data else item.answer) | e }}"
+        style="width:100%; max-width:400px;"
+      />
+    </div>
+
+    <div style="margin-bottom:1.25rem;">
+      <label for="difficulty" style="display:block; margin-bottom:0.4rem; font-weight:600;">Difficulté</label>
+      <select id="difficulty" name="difficulty" style="width:100%; max-width:400px;">
+        {% set current_diff = form_data.difficulty if form_data else item.difficulty %}
+        <option value="any" {% if current_diff == 'any' %}selected{% endif %}>Indifférent</option>
+        {% for code, label in difficulty_choices %}
+          <option value="{{ code }}" {% if code == current_diff %}selected{% endif %}>{{ label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div style="margin-bottom:1.5rem;">
+      <label style="display:flex; align-items:center; gap:0.5rem; cursor:pointer;">
+        <input
+          type="checkbox"
+          name="is_active"
+          {% if form_data is not none %}
+            {% if form_data.is_active %}checked{% endif %}
+          {% elif item.is_active %}
+            checked
+          {% endif %}
+        />
+        <span style="font-weight:600;">Exercice actif</span>
+      </label>
+      <p class="muted" style="margin:0.25rem 0 0; font-size:0.8rem;">Un exercice inactif ne sera pas proposé lors des sessions.</p>
+    </div>
+
+    <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
+      <button type="submit" class="btn btn-primary">Enregistrer</button>
+      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises') }}">Annuler</a>
+    </div>
+  </form>
+</div>
+
+{% endblock %}
