@@ -3220,14 +3220,14 @@ def admin_email_config():
 
         elif action == "test":
             success, msg = test_smtp_connection(config)
-            if success and current_student.email:
+            if success and current_user.email:
                 send_email(
-                    current_student.email,
+                    current_user.email,
                     "Test email — English Explorer",
                     "<p>La configuration SMTP fonctionne correctement ✓</p>",
                     "La configuration SMTP fonctionne correctement.",
                 )
-                msg += f" Un email de test a été envoyé à {current_student.email}."
+                msg += f" Un email de test a été envoyé à {current_user.email}."
             test_result = {"success": success, "message": msg}
 
         elif action == "clear_password":
