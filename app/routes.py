@@ -2020,17 +2020,12 @@ def parent_dashboard():
             }
         )
 
-    all_users = []
-    if user and user.is_admin():
-        all_users = Student.query.order_by(Student.first_name, Student.last_name).all()
-
     return render_template(
         "parent_dashboard.html",
         stats=stats,
         prepared_sets=prepared_sets,
         students=students,
         categories=categories,
-        all_users=all_users,
         week_start=week_start,
         week_end=week_end,
     )
@@ -2823,6 +2818,14 @@ def parent_generate_ai_exercises(student_id: int):
     )
 
 
+@bp.route("/admin/users")
+@_admin_required
+def admin_users():
+    """Gestion des comptes utilisateurs."""
+    all_users = Student.query.order_by(Student.first_name, Student.last_name).all()
+    return render_template("admin/users.html", all_users=all_users)
+
+
 @bp.route("/admin/users/<int:user_id>/role", methods=["POST"])
 @_admin_required
 def update_user_role(user_id: int):
@@ -2836,12 +2839,12 @@ def update_user_role(user_id: int):
     current_user = _current_user()
     if current_user.id == target.id and new_role != "admin":
         flash("Tu ne peux pas retirer ton propre rôle d'administrateur.", "warning")
-        return redirect(url_for("main.parent_dashboard"))
+        return redirect(url_for("main.admin_users"))
 
     target.role = new_role
     db.session.commit()
     flash("Rôle utilisateur mis à jour.", "success")
-    return redirect(url_for("main.parent_dashboard"))
+    return redirect(url_for("main.admin_users"))
 
 
 # --- Admin OpenAI ----------------------------------------------------------

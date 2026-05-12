@@ -48,13 +48,13 @@
         </div>
         {% if current_user.is_admin() %}
         <div class="nav-tab-dropdown">
-          <span class="nav-tab{% if request.endpoint in ('main.admin_openai_hub', 'main.admin_openai_config', 'main.admin_openai_logs', 'main.admin_openai_log_detail', 'main.admin_openai_statistics', 'main.admin_openai_budget', 'main.admin_openai_prompts', 'main.admin_openai_prompt_edit', 'main.admin_config_hub', 'main.admin_system_config', 'main.admin_email_config') %} active{% endif %}">
+          <span class="nav-tab{% if request.endpoint in ('main.admin_openai_hub', 'main.admin_openai_config', 'main.admin_openai_logs', 'main.admin_openai_log_detail', 'main.admin_openai_statistics', 'main.admin_openai_budget', 'main.admin_openai_prompts', 'main.admin_openai_prompt_edit', 'main.admin_config_hub', 'main.admin_system_config', 'main.admin_email_config', 'main.admin_users') %} active{% endif %}">
             Administration <span class="dropdown-arrow">▾</span>
           </span>
           <div class="nav-dropdown-menu">
             <a class="nav-dropdown-item" href="{{ url_for('main.admin_openai_hub') }}">Intelligence Artificielle</a>
             <a class="nav-dropdown-item" href="{{ url_for('main.admin_config_hub') }}">Configuration</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.parent_dashboard') }}#comptes">Utilisateurs</a>
+            <a class="nav-dropdown-item" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
           </div>
         </div>
         {% endif %}

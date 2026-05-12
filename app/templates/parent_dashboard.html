@@ -162,52 +162,6 @@
     {% endif %}
   </div>
 
-  {# ── Gestion des comptes (admin seulement) ── #}
-  {% if all_users %}
-    <div class="card" id="comptes">
-      <div class="card-header-actions">
-        <div>
-          <h3>Gestion des comptes</h3>
-          <p class="muted">Modifiez le rôle d'un utilisateur pour lui accorder les droits parent ou administrateur.</p>
-        </div>
-        <div class="card-actions">
-          <a class="btn btn-secondary" href="{{ url_for('main.admin_system_config') }}">Configuration système</a>
-          <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_hub') }}">Administration IA</a>
-        </div>
-      </div>
-
-      <div class="account-grid">
-        {% for user in all_users %}
-          <div class="account-card">
-            <div class="account-card__avatar">
-              {{ user.first_name[0] | upper }}{{ (user.last_name[0] | upper) if user.last_name else '' }}
-            </div>
-            <div class="account-card__body">
-              <strong class="account-card__name">{{ user.full_name() }}</strong>
-              <span class="account-card__email muted">{{ user.email or '—' }}</span>
-              <span class="badge
-                {%- if user.role == 'admin' %} badge-danger
-                {%- elif user.role == 'parent' %} badge-warning
-                {%- else %} badge-default{% endif %}">
-                {{ user.role | capitalize }}
-              </span>
-            </div>
-            <form class="account-card__form" method="post"
-                  action="{{ url_for('main.update_user_role', user_id=user.id) }}">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-              <select name="role" class="account-card__select">
-                <option value="student" {% if user.role == 'student' %}selected{% endif %}>Élève</option>
-                <option value="parent"  {% if user.role == 'parent'  %}selected{% endif %}>Parent</option>
-                <option value="admin"   {% if user.role == 'admin'   %}selected{% endif %}>Admin</option>
-              </select>
-              <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
-            </form>
-          </div>
-        {% endfor %}
-      </div>
-    </div>
-  {% endif %}
-
   {# ── Exercices préparés en attente ── #}
   <div class="card">
     <h3>Exercices préparés en attente</h3>
