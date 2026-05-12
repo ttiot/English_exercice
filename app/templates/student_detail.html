@@ -1,360 +1,514 @@
-{% extends 'base.html' %}
-{% block title %}Profil de {{ student.full_name() }}{% endblock %}
-{% block content %}
-
-{% if resume_session %}
-<div class="alert alert-warning" style="display:flex; align-items:center; gap:1rem; flex-wrap:wrap;">
-  <span>⏸️ <strong>Session en cours</strong> — tu as une session non terminée commencée le {{ resume_session.started_at.strftime('%d/%m à %H:%M') }}.</span>
-  <a class="btn btn-warning" href="{{ url_for('main.play_session', session_id=resume_session.id) }}" style="margin-left:auto;">▶ Reprendre</a>
+{% extends 'base.html' %} {% block title %}Profil de {{ student.full_name() }}{%
+endblock %} {% block content %} {% if resume_session %}
+<div
+    class="alert alert-warning"
+    style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap"
+>
+    <span
+        >⏸️ <strong>Session en cours</strong> — tu as une session non terminée
+        commencée le {{ resume_session.started_at.strftime('%d/%m à %H:%M')
+        }}.</span
+    >
+    <a
+        class="btn btn-warning"
+        href="{{ url_for('main.play_session', session_id=resume_session.id) }}"
+        style="margin-left: auto"
+        >▶ Reprendre</a
+    >
 </div>
-{% endif %}
-
-{# ── HERO ─────────────────────────────────────────────────────────────────── #}
+{% endif %} {# ── HERO
+─────────────────────────────────────────────────────────────────── #}
 <div class="card profile-hero">
-  <div class="profile-hero__left">
-    {# Anneau XP autour de l'avatar #}
-    <div class="xp-ring-wrapper" style="--xp-pct: {{ xp_data.xp_progress_pct }}%;">
-      <div class="xp-ring-track"></div>
-      <div class="xp-ring-fill"></div>
-      <div class="student-avatar-large">
-        <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
-      </div>
-    </div>
-  </div>
-
-  <div class="profile-hero__right">
-    <div class="profile-hero__name-row">
-      <h2>{{ student.full_name() }}</h2>
-      {% if global_streak >= 2 %}
-        <span class="streak-flame" title="{{ global_streak }} jours consécutifs">🔥 {{ global_streak }}j</span>
-      {% endif %}
+    <div class="profile-hero__left">
+        {# Anneau XP autour de l'avatar #}
+        <div
+            class="xp-ring-wrapper"
+            style="--xp-pct: {{ xp_data.xp_progress_pct }}%;"
+        >
+            <div class="xp-ring-track"></div>
+            <div class="xp-ring-fill"></div>
+            <div class="student-avatar-large">
+                <img
+                    src="{{ url_for('static', filename=student.avatar_url()) }}"
+                    alt="Avatar de {{ student.full_name() }}"
+                />
+            </div>
+        </div>
     </div>
 
-    {% set role_label = {'student': 'élève', 'parent': 'parent', 'admin': 'admin'} %}
-    <p class="muted">{% if student.age %}{{ student.age }} ans • {% endif %}Compte {{ role_label.get(student.role, student.role) }}</p>
+    <div class="profile-hero__right">
+        <div class="profile-hero__name-row">
+            <h2>{{ student.full_name() }}</h2>
+            {% if global_streak >= 2 %}
+            <span
+                class="streak-flame"
+                title="{{ global_streak }} jours consécutifs"
+                >🔥 {{ global_streak }}j</span
+            >
+            {% endif %}
+        </div>
 
-    {# Niveau & barre XP #}
-    <div class="level-block">
-      <div class="level-badge">
-        <span class="level-number">{{ xp_data.level }}</span>
-        <span class="level-title">{{ xp_data.title }}</span>
-      </div>
-      <div class="xp-bar-wrap">
-        <div class="xp-bar-fill" style="width: {{ xp_data.xp_progress_pct }}%;"></div>
-      </div>
-      <p class="xp-label muted">{{ xp_data.xp }} XP · prochain niveau à {{ xp_data.xp_for_next }} XP</p>
+        {% set role_label = {'student': 'élève', 'parent': 'parent', 'admin':
+        'admin'} %}
+        <p class="muted">
+            {% if student.age %}{{ student.age }} ans • {% endif %}Compte {{
+            role_label.get(student.role, student.role) }}
+        </p>
+
+        {# Niveau & barre XP #}
+        <div class="level-block">
+            <div class="level-badge">
+                <span class="level-number">{{ xp_data.level }}</span>
+                <span class="level-title">{{ xp_data.title }}</span>
+            </div>
+            <div class="xp-bar-wrap">
+                <div
+                    class="xp-bar-fill"
+                    style="width: {{ xp_data.xp_progress_pct }}%;"
+                ></div>
+            </div>
+            <p class="xp-label muted">
+                {{ xp_data.xp }} XP · prochain niveau à {{ xp_data.xp_for_next
+                }} XP
+            </p>
+        </div>
+
+        {% if student.goals %}
+        <p class="muted" style="margin-top: 0.5rem">
+            <em>{{ student.goals | e }}</em>
+        </p>
+        {% endif %} {% if student.target_cefr_level or student.target_grade %}
+        <p class="muted" style="font-size: 0.88rem">
+            {% if student.target_cefr_level %}CECRL {{ student.target_cefr_level
+            }}{% endif %} {% if student.target_cefr_level and
+            student.target_grade %} • {% endif %} {% if student.target_grade
+            %}{{ student.target_grade }}{% if student.target_trimester %} (T{{
+            student.target_trimester }}){% endif %}{% endif %}
+        </p>
+        {% endif %}
+
+        <div class="student-actions" style="margin-top: 1rem">
+            <a
+                class="btn btn-primary"
+                href="{{ url_for('main.start_session', student_id=student.id) }}"
+                >⚡ Démarrer</a
+            >
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for('main.start_session', student_id=student.id, mode='challenge_10') }}"
+                >🎯 Défi 10 min</a
+            >
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for('main.start_session', student_id=student.id, mode='control') }}"
+                >📝 Contrôle</a
+            >
+            {% if can_manage %}
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for('main.manage_student', student_id=student.id) }}"
+                >⚙️ Profil</a
+            >
+            {% endif %}
+        </div>
+
+        {% if parent_ok %}
+        <div style="margin-top: 0.75rem">
+            <a
+                class="btn btn-secondary"
+                href="{{ url_for('main.parent_generate_ai_exercises', student_id=student.id) }}"
+                >✨ Générer des exercices IA</a
+            >
+        </div>
+        <p class="muted" style="font-size: 0.82rem; margin-top: 0.75rem">
+            Bilan :
+            <a
+                href="{{ url_for('main.export_quarter_report', student_id=student.id, format='csv') }}"
+                >CSV</a
+            >
+            •
+            <a
+                href="{{ url_for('main.export_quarter_report', student_id=student.id, format='pdf') }}"
+                >PDF</a
+            >
+        </p>
+        {% endif %}
     </div>
-
-    {% if student.goals %}
-      <p class="muted" style="margin-top:0.5rem;"><em>{{ student.goals | e }}</em></p>
-    {% endif %}
-
-    {% if student.target_cefr_level or student.target_grade %}
-      <p class="muted" style="font-size:0.88rem;">
-        {% if student.target_cefr_level %}CECRL {{ student.target_cefr_level }}{% endif %}
-        {% if student.target_cefr_level and student.target_grade %} • {% endif %}
-        {% if student.target_grade %}{{ student.target_grade }}{% if student.target_trimester %} (T{{ student.target_trimester }}){% endif %}{% endif %}
-      </p>
-    {% endif %}
-
-    <div class="student-actions" style="margin-top:1rem;">
-      <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id) }}">⚡ Démarrer</a>
-      <a class="btn btn-secondary" href="{{ url_for('main.start_session', student_id=student.id, mode='challenge_10') }}">🎯 Défi 10 min</a>
-      <a class="btn btn-secondary" href="{{ url_for('main.start_session', student_id=student.id, mode='control') }}">📝 Contrôle</a>
-      {% if can_manage %}
-        <a class="btn btn-secondary" href="{{ url_for('main.manage_student', student_id=student.id) }}">⚙️ Profil</a>
-      {% endif %}
-    </div>
-
-    {% if parent_ok %}
-      <div style="margin-top:0.75rem;">
-        <a class="btn btn-secondary" href="{{ url_for('main.parent_generate_ai_exercises', student_id=student.id) }}">✨ Générer des exercices IA</a>
-      </div>
-      <p class="muted" style="font-size:0.82rem; margin-top:0.75rem;">
-        Bilan :
-        <a href="{{ url_for('main.export_quarter_report', student_id=student.id, format='csv') }}">CSV</a> •
-        <a href="{{ url_for('main.export_quarter_report', student_id=student.id, format='pdf') }}">PDF</a>
-      </p>
-    {% endif %}
-  </div>
 </div>
 
-{# ── KPIs SEMAINE ─────────────────────────────────────────────────────────── #}
+{# ── KPIs SEMAINE ───────────────────────────────────────────────────────────
+#}
 <div class="kpi-grid">
-  <div class="kpi-tile">
-    <span class="kpi-value" style="color: var(--accent-cyan);">{{ weekly_progress.sessions }}</span>
-    <span class="kpi-label">sessions cette semaine</span>
-  </div>
-  <div class="kpi-tile">
-    <span class="kpi-value" style="color: var(--accent-blue);">{{ weekly_progress.minutes }}</span>
-    <span class="kpi-label">minutes pratiquées</span>
-  </div>
-  <div class="kpi-tile">
-    <span class="kpi-value" style="color: var(--accent-green);">{{ weekly_progress.accuracy }}%</span>
-    <span class="kpi-label">précision moyenne</span>
-  </div>
-  <div class="kpi-tile">
-    <span class="kpi-value" style="color: var(--accent-warning);">{{ weekly_progress.challenges }}</span>
-    <span class="kpi-label">défis complétés</span>
-  </div>
+    <div class="kpi-tile">
+        <span class="kpi-value" style="color: var(--accent-cyan)"
+            >{{ weekly_progress.sessions }}</span
+        >
+        <span class="kpi-label">sessions cette semaine</span>
+    </div>
+    <div class="kpi-tile">
+        <span class="kpi-value" style="color: var(--accent-blue)"
+            >{{ weekly_progress.minutes }}</span
+        >
+        <span class="kpi-label">minutes pratiquées</span>
+    </div>
+    <div class="kpi-tile">
+        <span class="kpi-value" style="color: var(--accent-green)"
+            >{{ weekly_progress.accuracy }}%</span
+        >
+        <span class="kpi-label">précision moyenne</span>
+    </div>
+    <div class="kpi-tile">
+        <span class="kpi-value" style="color: var(--accent-warning)"
+            >{{ weekly_progress.challenges }}</span
+        >
+        <span class="kpi-label">défis complétés</span>
+    </div>
 </div>
 
-{# ── EXERCICE PRÉPARÉ ─────────────────────────────────────────────────────── #}
-{% if upcoming_set %}
-  <div class="card prepared-set-card">
+{# ── EXERCICE PRÉPARÉ ───────────────────────────────────────────────────────
+#} {% if upcoming_set %}
+<div class="card prepared-set-card">
     <div class="prepared-set-card__icon">📦</div>
     <div>
-      <h3 style="margin:0 0 0.25rem;">{{ upcoming_set.title }}</h3>
-      <p class="muted" style="margin:0;">
-        {{ upcoming_set.questions|length }} question{{ 's' if upcoming_set.questions|length > 1 else '' }}
-        {% if upcoming_set.use_time_limit and upcoming_set.time_limit_seconds %}
-          · {% set minutes = upcoming_set.time_limit_seconds // 60 %}{% set seconds = upcoming_set.time_limit_seconds % 60 %}{{ minutes }} min {{ seconds }} s
-        {% else %}
-          · sans limite de temps
-        {% endif %}
-        {% if upcoming_set.student_id %}· exercice dédié{% endif %}
-      </p>
+        <h3 style="margin: 0 0 0.25rem">{{ upcoming_set.title }}</h3>
+        <p class="muted" style="margin: 0">
+            {{ upcoming_set.questions|length }} question{{ 's' if
+            upcoming_set.questions|length > 1 else '' }} {% if
+            upcoming_set.use_time_limit and upcoming_set.time_limit_seconds %} ·
+            {% set minutes = upcoming_set.time_limit_seconds // 60 %}{% set
+            seconds = upcoming_set.time_limit_seconds % 60 %}{{ minutes }} min
+            {{ seconds }} s {% else %} · sans limite de temps {% endif %} {% if
+            upcoming_set.student_id %}· exercice dédié{% endif %}
+        </p>
     </div>
-    <a class="btn btn-primary" href="{{ url_for('main.start_session', student_id=student.id, mode='prepared') }}" style="margin-left:auto;">Commencer</a>
-  </div>
-{% endif %}
-
-{# ── QUÊTES DE LA SEMAINE ─────────────────────────────────────────────────── #}
+    <a
+        class="btn btn-primary"
+        href="{{ url_for('main.start_session', student_id=student.id, mode='prepared') }}"
+        style="margin-left: auto"
+        >Commencer</a
+    >
+</div>
+{% endif %} {# ── QUÊTES DE LA SEMAINE
+─────────────────────────────────────────────────── #}
 <div class="card">
-  <h3 class="section-title">⚔️ Quêtes de la semaine</h3>
-  {% if weekly_goal %}
-    {% set quest_count = 4 %}
-    {% set done_sessions = 1 if weekly_progress.sessions >= weekly_goal.target_sessions else 0 %}
-    {% set done_minutes = 1 if weekly_progress.minutes >= weekly_goal.target_minutes else 0 %}
-    {% set done_accuracy = 1 if weekly_progress.accuracy >= weekly_goal.target_accuracy else 0 %}
-    {% set done_challenges = 1 if weekly_progress.challenges >= weekly_goal.target_challenges else 0 %}
-    {% set quests_done = done_sessions + done_minutes + done_accuracy + done_challenges %}
+    <h3 class="section-title">⚔️ Quêtes de la semaine</h3>
+    {% if weekly_goal %} {% set quest_count = 4 %} {% set done_sessions = 1 if
+    weekly_progress.sessions >= weekly_goal.target_sessions else 0 %} {% set
+    done_minutes = 1 if weekly_progress.minutes >= weekly_goal.target_minutes
+    else 0 %} {% set done_accuracy = 1 if weekly_progress.accuracy >=
+    weekly_goal.target_accuracy else 0 %} {% set done_challenges = 1 if
+    weekly_progress.challenges >= weekly_goal.target_challenges else 0 %} {% set
+    quests_done = done_sessions + done_minutes + done_accuracy + done_challenges
+    %}
 
     <div class="quest-progress-header">
-      <span class="quest-count">{{ quests_done }}/{{ quest_count }} quêtes accomplies</span>
-      {% if quests_done == quest_count %}
+        <span class="quest-count"
+            >{{ quests_done }}/{{ quest_count }} quêtes accomplies</span
+        >
+        {% if quests_done == quest_count %}
         <span class="quest-all-done">🌟 Semaine parfaite !</span>
-      {% endif %}
+        {% endif %}
     </div>
-    <div class="progress-bar"><div class="progress-bar-fill" style="width: {{ (quests_done / quest_count * 100)|int }}%;"></div></div>
+    <div class="progress-bar">
+        <div
+            class="progress-bar-fill"
+            style="width: {{ (quests_done / quest_count * 100)|int }}%;"
+        ></div>
+    </div>
 
     <div class="quest-list">
-      <div class="quest-item {% if done_sessions %}quest-done{% endif %}">
-        <span class="quest-check">{% if done_sessions %}✅{% else %}⏳{% endif %}</span>
-        <span class="quest-text">Sessions : {{ weekly_progress.sessions }} / {{ weekly_goal.target_sessions }}</span>
-      </div>
-      <div class="quest-item {% if done_minutes %}quest-done{% endif %}">
-        <span class="quest-check">{% if done_minutes %}✅{% else %}⏳{% endif %}</span>
-        <span class="quest-text">Minutes : {{ weekly_progress.minutes }} / {{ weekly_goal.target_minutes }}</span>
-      </div>
-      <div class="quest-item {% if done_accuracy %}quest-done{% endif %}">
-        <span class="quest-check">{% if done_accuracy %}✅{% else %}⏳{% endif %}</span>
-        <span class="quest-text">Précision : {{ weekly_progress.accuracy }}% / {{ weekly_goal.target_accuracy }}%</span>
-      </div>
-      <div class="quest-item {% if done_challenges %}quest-done{% endif %}">
-        <span class="quest-check">{% if done_challenges %}✅{% else %}⏳{% endif %}</span>
-        <span class="quest-text">Défis : {{ weekly_progress.challenges }} / {{ weekly_goal.target_challenges }}</span>
-      </div>
-    </div>
-  {% else %}
-    <p class="muted">Aucun objectif défini pour cette semaine — demande à ton parent de le configurer !</p>
-  {% endif %}
-</div>
-
-{# ── HEATMAP D'ACTIVITÉ ───────────────────────────────────────────────────── #}
-<div class="card">
-  <div class="heatmap-header">
-    <h3 class="section-title" style="margin:0;">📅 Activité — 5 dernières semaines</h3>
-    {% if global_streak >= 1 %}
-      <span class="streak-display">
-        {% if global_streak >= 2 %}🔥{% else %}✨{% endif %}
-        {{ global_streak }} jour{{ 's' if global_streak > 1 else '' }} de suite
-      </span>
-    {% endif %}
-  </div>
-  <div class="heatmap-days-label">
-    <span>Lun</span><span>Mar</span><span>Mer</span><span>Jeu</span><span>Ven</span><span>Sam</span><span>Dim</span>
-  </div>
-  <div class="heatmap-grid">
-    {% for day in activity_heatmap %}
-      {% set heat_class = 'heat-3' if day.count >= 3 else ('heat-2' if day.count == 2 else ('heat-1' if day.count == 1 else 'heat-0')) %}
-      <div class="heatmap-cell {{ heat_class }}" title="{{ day.date }} — {{ day.count }} session{{ 's' if day.count > 1 else '' }}"></div>
-    {% endfor %}
-  </div>
-  <div class="heatmap-legend">
-    <span class="muted" style="font-size:0.78rem;">Moins</span>
-    <div class="heatmap-cell heat-0"></div>
-    <div class="heatmap-cell heat-1"></div>
-    <div class="heatmap-cell heat-2"></div>
-    <div class="heatmap-cell heat-3"></div>
-    <span class="muted" style="font-size:0.78rem;">Plus</span>
-  </div>
-</div>
-
-{# ── BADGES ───────────────────────────────────────────────────────────────── #}
-<div class="card">
-  <h3 class="section-title">🏆 Badges</h3>
-  {% if badge_status %}
-    <div class="badges-grid">
-      {% for item in badge_status %}
-        <div class="badge-card {% if item.earned %}badge-card--earned{% else %}badge-card--locked{% endif %}">
-          <div class="badge-card__icon">
-            {% if item.earned %}🏅{% else %}🔒{% endif %}
-          </div>
-          <div class="badge-card__name">{{ item.badge.name }}</div>
-          <div class="badge-card__desc muted">{{ item.badge.description }}</div>
-          {% if not item.earned %}
-            <div class="badge-card__progress">
-              <div class="badge-progress-bar">
-                <div class="badge-progress-fill" style="width: {{ item.mastery_pct }}%;"></div>
-              </div>
-              <span class="badge-progress-label">{{ item.current_mastery }}% / {{ item.badge.min_mastery|int }}%
-                {% if item.streak_done %} · 🔥 streak ok{% endif %}
-              </span>
-            </div>
-          {% endif %}
+        <div class="quest-item {% if done_sessions %}quest-done{% endif %}">
+            <span class="quest-check"
+                >{% if done_sessions %}✅{% else %}⏳{% endif %}</span
+            >
+            <span class="quest-text"
+                >Sessions : {{ weekly_progress.sessions }} / {{
+                weekly_goal.target_sessions }}</span
+            >
         </div>
-      {% endfor %}
+        <div class="quest-item {% if done_minutes %}quest-done{% endif %}">
+            <span class="quest-check"
+                >{% if done_minutes %}✅{% else %}⏳{% endif %}</span
+            >
+            <span class="quest-text"
+                >Minutes : {{ weekly_progress.minutes }} / {{
+                weekly_goal.target_minutes }}</span
+            >
+        </div>
+        <div class="quest-item {% if done_accuracy %}quest-done{% endif %}">
+            <span class="quest-check"
+                >{% if done_accuracy %}✅{% else %}⏳{% endif %}</span
+            >
+            <span class="quest-text"
+                >Précision : {{ weekly_progress.accuracy }}% / {{
+                weekly_goal.target_accuracy }}%</span
+            >
+        </div>
+        <div class="quest-item {% if done_challenges %}quest-done{% endif %}">
+            <span class="quest-check"
+                >{% if done_challenges %}✅{% else %}⏳{% endif %}</span
+            >
+            <span class="quest-text"
+                >Défis : {{ weekly_progress.challenges }} / {{
+                weekly_goal.target_challenges }}</span
+            >
+        </div>
     </div>
-  {% else %}
-    <p class="muted">Les badges se débloquent après tes premières sessions. Lance-toi !</p>
-  {% endif %}
+    {% else %}
+    <p class="muted">
+        Aucun objectif défini pour cette semaine — demande à ton parent de le
+        configurer !
+    </p>
+    {% endif %}
 </div>
 
-{# ── COMPÉTENCES ──────────────────────────────────────────────────────────── #}
-{% if progress %}
-  <div class="card">
-    <h3 class="section-title">📊 Compétences</h3>
-    <div class="skills-grid">
-      {% for item in progress|sort(attribute='rate', reverse=True) %}
-        {% set pct = item.rate|int %}
-        {% set color = '#2ed573' if pct >= 80 else ('#ffa502' if pct >= 50 else '#ff4757') %}
-        <div class="skill-card">
-          <div class="skill-ring-wrap">
-            <svg class="skill-ring" viewBox="0 0 44 44">
-              <circle class="skill-ring__track" cx="22" cy="22" r="18"/>
-              <circle class="skill-ring__fill" cx="22" cy="22" r="18"
-                stroke="{{ color }}"
-                stroke-dasharray="{{ (pct * 113.1 / 100)|round(1) }} 113.1"
-              />
-            </svg>
-            <span class="skill-ring__pct" style="color:{{ color }};">{{ pct }}%</span>
-          </div>
-          <div class="skill-card__info">
-            <strong class="skill-card__name">{{ item.label }}</strong>
-            <span class="muted skill-card__meta">{{ item.correct }}/{{ item.total }}</span>
-            {% if item.last_practiced %}
-              <span class="muted skill-card__meta">{{ item.last_practiced.strftime('%d/%m') }}</span>
-            {% endif %}
-            {% if item.next_review %}
-              <span class="muted skill-card__meta" style="color:var(--accent-cyan);font-size:0.78rem;">📅 révision {{ item.next_review.strftime('%d/%m') }}</span>
-            {% endif %}
-          </div>
-        </div>
-      {% endfor %}
-    </div>
-  </div>
-{% endif %}
-
-{# ── RÉVISIONS PLANIFIÉES ─────────────────────────────────────────────────── #}
-{% if review_plans %}
-  <div class="card">
-    <h3 class="section-title">📆 Révisions planifiées</h3>
-    <ul class="review-plan-list">
-      {% for plan in review_plans %}
-        <li class="review-plan-item">
-          <span class="review-plan-date">{{ plan.due_date.strftime('%d/%m/%Y') }}</span>
-          <span class="review-plan-cat">{{ plan.category.name }}</span>
-        </li>
-      {% endfor %}
-    </ul>
-  </div>
-{% endif %}
-
-{# ── ANALYSE PARENT ───────────────────────────────────────────────────────── #}
-{% if parent_ok %}
-  <div class="card">
-    <h3 class="section-title">🔍 Analyse détaillée</h3>
-    {% if theme_summary %}
-      <p><strong>Évolution par thème</strong></p>
-      <ul>
-        {% for item in theme_summary %}
-          <li>{{ item.domain }} : {{ item.rate }}% ({{ item.correct }}/{{ item.total }})</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Pas encore de données par thème.</p>
-    {% endif %}
-    {% if recurring_errors %}
-      <p><strong>Erreurs récurrentes</strong></p>
-      <ul>
-        {% for error in recurring_errors %}
-          <li>{{ error.prompt }} ({{ error.count }}x)</li>
-        {% endfor %}
-      </ul>
-    {% else %}
-      <p class="muted">Aucune erreur récurrente.</p>
-    {% endif %}
-  </div>
-{% endif %}
-
-{# ── SESSIONS RÉCENTES ────────────────────────────────────────────────────── #}
+{# ── SESSIONS RÉCENTES ──────────────────────────────────────────────────────
+#}
 <div class="card">
-  <h3 class="section-title">🕐 Sessions récentes</h3>
-  {% if sessions %}
+    <h3 class="section-title">🕐 Sessions récentes</h3>
+    {% if sessions %}
     <table class="table">
-      <thead>
-        <tr>
-          <th>Date</th>
-          <th>Score</th>
-          <th>Niveau</th>
-          <th>Temps</th>
-          <th>Détails</th>
-          {% if parent_ok %}<th>Actions</th>{% endif %}
-        </tr>
-      </thead>
-      <tbody>
-        {% for sess in sessions[:10] %}
-          <tr>
-            <td>{{ sess.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
-            <td>
-              {% if sess.total_questions %}
-                <span style="color: {% if sess.completion_rate() >= 80 %}var(--accent-green){% elif sess.completion_rate() >= 50 %}var(--accent-warning){% else %}var(--accent-red){% endif %};">
-                  {{ sess.correct_answers }}/{{ sess.total_questions }}
-                </span>
-              {% else %}
-                —
-              {% endif %}
-            </td>
-            <td>{{ difficulty_labels.get(sess.difficulty or 'beginner', (sess.difficulty or 'beginner')|replace('_', ' ')|title) }}</td>
-            <td>
-              {% if sess.time_limit_seconds %}
-                {% set m = sess.time_limit_seconds // 60 %}{% set s = sess.time_limit_seconds % 60 %}{{ m }} min {{ s }} s
-              {% elif sess.time_limit_minutes %}
-                {{ sess.time_limit_minutes }} min
-              {% else %}
-                —
-              {% endif %}
-            </td>
-            <td><a href="{{ url_for('main.session_summary', session_id=sess.id) }}">Correction</a></td>
-            {% if parent_ok %}
-              <td>
-                <form method="post" action="{{ url_for('main.delete_session', session_id=sess.id) }}" onsubmit="return confirm('Supprimer cette session ?');">
-                  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
-                  <button class="btn btn-danger btn-small" type="submit">Supprimer</button>
-                </form>
-              </td>
-            {% endif %}
-          </tr>
-        {% endfor %}
-      </tbody>
+        <thead>
+            <tr>
+                <th>Date</th>
+                <th>Score</th>
+                <th>Niveau</th>
+                <th>Temps</th>
+                <th>Détails</th>
+                {% if parent_ok %}
+                <th>Actions</th>
+                {% endif %}
+            </tr>
+        </thead>
+        <tbody>
+            {% for sess in sessions[:10] %}
+            <tr>
+                <td>{{ sess.started_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                <td>
+                    {% if sess.total_questions %}
+                    <span
+                        style="color: {% if sess.completion_rate() >= 80 %}var(--accent-green){% elif sess.completion_rate() >= 50 %}var(--accent-warning){% else %}var(--accent-red){% endif %};"
+                    >
+                        {{ sess.correct_answers }}/{{ sess.total_questions }}
+                    </span>
+                    {% else %} — {% endif %}
+                </td>
+                <td>
+                    {{ difficulty_labels.get(sess.difficulty or 'beginner',
+                    (sess.difficulty or 'beginner')|replace('_', ' ')|title) }}
+                </td>
+                <td>
+                    {% if sess.time_limit_seconds %} {% set m =
+                    sess.time_limit_seconds // 60 %}{% set s =
+                    sess.time_limit_seconds % 60 %}{{ m }} min {{ s }} s {% elif
+                    sess.time_limit_minutes %} {{ sess.time_limit_minutes }} min
+                    {% else %} — {% endif %}
+                </td>
+                <td>
+                    <a
+                        href="{{ url_for('main.session_summary', session_id=sess.id) }}"
+                        >Correction</a
+                    >
+                </td>
+                {% if parent_ok %}
+                <td>
+                    <form
+                        method="post"
+                        action="{{ url_for('main.delete_session', session_id=sess.id) }}"
+                        onsubmit="return confirm('Supprimer cette session ?');"
+                    >
+                        <input
+                            type="hidden"
+                            name="csrf_token"
+                            value="{{ csrf_token() }}"
+                        />
+                        <button class="btn btn-danger btn-small" type="submit">
+                            Supprimer
+                        </button>
+                    </form>
+                </td>
+                {% endif %}
+            </tr>
+            {% endfor %}
+        </tbody>
     </table>
     {% if sessions|length > 10 %}
-      <p class="muted" style="text-align:center;margin-top:0.75rem;font-size:0.88rem;">Affichage des 10 sessions les plus récentes sur {{ sessions|length }}.</p>
-    {% endif %}
-  {% else %}
+    <p
+        class="muted"
+        style="text-align: center; margin-top: 0.75rem; font-size: 0.88rem"
+    >
+        Affichage des 10 sessions les plus récentes sur {{ sessions|length }}.
+    </p>
+    {% endif %} {% else %}
     <p>Aucune session pour le moment — lance ta première aventure !</p>
-  {% endif %}
+    {% endif %}
 </div>
 
-{% endblock %}
+{# ── HEATMAP D'ACTIVITÉ ─────────────────────────────────────────────────────
+#}
+<div class="card">
+    <div class="heatmap-header">
+        <h3 class="section-title" style="margin: 0">
+            📅 Activité — 5 dernières semaines
+        </h3>
+        {% if global_streak >= 1 %}
+        <span class="streak-display">
+            {% if global_streak >= 2 %}🔥{% else %}✨{% endif %} {{
+            global_streak }} jour{{ 's' if global_streak > 1 else '' }} de suite
+        </span>
+        {% endif %}
+    </div>
+    <div class="heatmap-days-label">
+        <span>Lun</span><span>Mar</span><span>Mer</span><span>Jeu</span
+        ><span>Ven</span><span>Sam</span><span>Dim</span>
+    </div>
+    <div class="heatmap-grid">
+        {% for day in activity_heatmap %} {% set heat_class = 'heat-3' if
+        day.count >= 3 else ('heat-2' if day.count == 2 else ('heat-1' if
+        day.count == 1 else 'heat-0')) %}
+        <div
+            class="heatmap-cell {{ heat_class }}"
+            title="{{ day.date }} — {{ day.count }} session{{ 's' if day.count > 1 else '' }}"
+        ></div>
+        {% endfor %}
+    </div>
+    <div class="heatmap-legend">
+        <span class="muted" style="font-size: 0.78rem">Moins</span>
+        <div class="heatmap-cell heat-0"></div>
+        <div class="heatmap-cell heat-1"></div>
+        <div class="heatmap-cell heat-2"></div>
+        <div class="heatmap-cell heat-3"></div>
+        <span class="muted" style="font-size: 0.78rem">Plus</span>
+    </div>
+</div>
+
+{# ── BADGES ─────────────────────────────────────────────────────────────────
+#}
+<div class="card">
+    <h3 class="section-title">🏆 Badges</h3>
+    {% if badge_status %}
+    <div class="badges-grid">
+        {% for item in badge_status %}
+        <div
+            class="badge-card {% if item.earned %}badge-card--earned{% else %}badge-card--locked{% endif %}"
+        >
+            <div class="badge-card__icon">
+                {% if item.earned %}🏅{% else %}🔒{% endif %}
+            </div>
+            <div class="badge-card__name">{{ item.badge.name }}</div>
+            <div class="badge-card__desc muted">
+                {{ item.badge.description }}
+            </div>
+            {% if not item.earned %}
+            <div class="badge-card__progress">
+                <div class="badge-progress-bar">
+                    <div
+                        class="badge-progress-fill"
+                        style="width: {{ item.mastery_pct }}%;"
+                    ></div>
+                </div>
+                <span class="badge-progress-label"
+                    >{{ item.current_mastery }}% / {{ item.badge.min_mastery|int
+                    }}% {% if item.streak_done %} · 🔥 streak ok{% endif %}
+                </span>
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="muted">
+        Les badges se débloquent après tes premières sessions. Lance-toi !
+    </p>
+    {% endif %}
+</div>
+
+{# ── COMPÉTENCES ────────────────────────────────────────────────────────────
+#} {% if progress %}
+<div class="card">
+    <h3 class="section-title">📊 Compétences</h3>
+    <div class="skills-grid">
+        {% for item in progress|sort(attribute='rate', reverse=True) %} {% set
+        pct = item.rate|int %} {% set color = '#2ed573' if pct >= 80 else
+        ('#ffa502' if pct >= 50 else '#ff4757') %}
+        <div class="skill-card">
+            <div class="skill-ring-wrap">
+                <svg class="skill-ring" viewBox="0 0 44 44">
+                    <circle class="skill-ring__track" cx="22" cy="22" r="18" />
+                    <circle
+                        class="skill-ring__fill"
+                        cx="22"
+                        cy="22"
+                        r="18"
+                        stroke="{{ color }}"
+                        stroke-dasharray="{{ (pct * 113.1 / 100)|round(1) }} 113.1"
+                    />
+                </svg>
+                <span class="skill-ring__pct" style="color:{{ color }};"
+                    >{{ pct }}%</span
+                >
+            </div>
+            <div class="skill-card__info">
+                <strong class="skill-card__name">{{ item.label }}</strong>
+                <span class="muted skill-card__meta"
+                    >{{ item.correct }}/{{ item.total }}</span
+                >
+                {% if item.last_practiced %}
+                <span class="muted skill-card__meta"
+                    >{{ item.last_practiced.strftime('%d/%m') }}</span
+                >
+                {% endif %} {% if item.next_review %}
+                <span
+                    class="muted skill-card__meta"
+                    style="color: var(--accent-cyan); font-size: 0.78rem"
+                    >📅 révision {{ item.next_review.strftime('%d/%m') }}</span
+                >
+                {% endif %}
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endif %} {# ── RÉVISIONS PLANIFIÉES
+─────────────────────────────────────────────────── #} {% if review_plans %}
+<div class="card">
+    <h3 class="section-title">📆 Révisions planifiées</h3>
+    <ul class="review-plan-list">
+        {% for plan in review_plans %}
+        <li class="review-plan-item">
+            <span class="review-plan-date"
+                >{{ plan.due_date.strftime('%d/%m/%Y') }}</span
+            >
+            <span class="review-plan-cat">{{ plan.category.name }}</span>
+        </li>
+        {% endfor %}
+    </ul>
+</div>
+{% endif %} {# ── ANALYSE PARENT
+───────────────────────────────────────────────────────── #} {% if parent_ok %}
+<div class="card">
+    <h3 class="section-title">🔍 Analyse détaillée</h3>
+    {% if theme_summary %}
+    <p><strong>Évolution par thème</strong></p>
+    <ul>
+        {% for item in theme_summary %}
+        <li>
+            {{ item.domain }} : {{ item.rate }}% ({{ item.correct }}/{{
+            item.total }})
+        </li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Pas encore de données par thème.</p>
+    {% endif %} {% if recurring_errors %}
+    <p><strong>Erreurs récurrentes</strong></p>
+    <ul>
+        {% for error in recurring_errors %}
+        <li>{{ error.prompt }} ({{ error.count }}x)</li>
+        {% endfor %}
+    </ul>
+    {% else %}
+    <p class="muted">Aucune erreur récurrente.</p>
+    {% endif %}
+</div>
+{% endif %} {% endblock %}
