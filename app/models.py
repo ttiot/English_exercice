@@ -1057,6 +1057,22 @@ class OpenAIPrompt(db.Model, TimestampMixin):
                 return defaults["system_prompt"]
 
 
+class WordTranslation(db.Model, TimestampMixin):
+    """Cache global des traductions de mots/expressions demandées par les élèves."""
+
+    __tablename__ = "word_translations"
+
+    id = db.Column(db.Integer, primary_key=True)
+    word = db.Column(db.String(500), nullable=False, unique=True, index=True)
+    translation = db.Column(db.Text, nullable=False)
+    examples_json = db.Column(db.Text, nullable=True)
+
+    @property
+    def examples(self) -> list:
+        import json as _json
+        return _json.loads(self.examples_json) if self.examples_json else []
+
+
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("custom", "Personnalisé"),
     ("number_word", "Nombres ➜ mots"),
