@@ -237,35 +237,34 @@
 
       ttClose.addEventListener('click', hideTooltip);
 
-      document.addEventListener('mousedown', function (e) {
+      function onPointerDown(e) {
         if (!tooltip.contains(e.target)) hideTooltip();
-      });
+      }
+      document.addEventListener('mousedown', onPointerDown);
+      document.addEventListener('touchstart', onPointerDown, { passive: true });
 
-      document.addEventListener('mouseup', function (e) {
-        /* Ignore clicks inside the tooltip itself */
-        if (tooltip.contains(e.target)) return;
-
-        setTimeout(function () {
+      let selChangeTimer = null;
+      document.addEventListener('selectionchange', function () {
+        clearTimeout(selChangeTimer);
+        selChangeTimer = setTimeout(function () {
           const sel = window.getSelection();
           if (!sel || sel.isCollapsed) return;
+          if (tooltip.contains(document.activeElement)) return;
 
           const word = sel.toString().trim();
           if (!word || word.length > 200) return;
 
-          /* Check that the selection anchor is inside an allowed zone */
           const anchorNode = sel.anchorNode;
           const parentEl = anchorNode.nodeType === Node.TEXT_NODE
             ? anchorNode.parentElement
             : anchorNode;
           if (!insideSelectableZone(parentEl)) return;
 
-          /* Position tooltip above the selection */
           const range = sel.getRangeAt(0);
           const rect = range.getBoundingClientRect();
           const cx = rect.left + rect.width / 2;
-          const cy = rect.top + window.scrollY;
+          const cy = rect.top;
 
-          /* Gather surrounding sentence as context (up to 300 chars) */
           const container = parentEl.closest(SELECTABLE_SELECTORS) || parentEl;
           const context = (container.textContent || '').trim().slice(0, 300);
 
@@ -302,14 +301,14 @@
                 ttBody.innerHTML = html;
                 /* Re-position now that content is taller */
                 const rect2 = range.getBoundingClientRect();
-                const cy2 = rect2.top + window.scrollY;
+                const cy2 = rect2.top;
                 showTooltip(cx, cy2, ttBody.innerHTML);
               })
               .catch(function () {
                 ttBody.innerHTML = '<span class="tt-error">Erreur réseau. Réessaie.</span>';
               });
           }, { once: true });
-        }, 10);
+        }, 100);
       });
 
       function escHtml(str) {
