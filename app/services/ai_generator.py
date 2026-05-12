@@ -145,6 +145,15 @@ _USER_PROMPT_TEMPLATE = (
 )
 
 
+_SYSTEM_PROMPT_TRANSLATION = (
+    "Tu es un assistant pédagogique pour des collégiens français (6ème/5ème) "
+    "qui apprennent l'anglais. Quand on te donne un mot ou une expression, "
+    "détecte sa langue, traduis-le dans l'autre langue (anglais ↔ français) "
+    "et donne 2 exemples d'utilisation simples adaptés au niveau collège, "
+    "chacun suivi de sa traduction entre parenthèses. "
+    "Réponds uniquement avec le JSON demandé, sans commentaire."
+)
+
 # Prompts par défaut seedés en BDD au boot par ``ensure_default_prompts()``.
 # Si un admin édite le prompt côté UI, c'est la version BDD qui prime ;
 # les valeurs ci-dessous ne servent plus que de fallback (KeyError, reset).
@@ -162,6 +171,18 @@ _DEFAULT_PROMPTS: dict = {
             ["difficulty", "categories", "student_prompt", "count"]
         ),
         "parameters_json": json.dumps({"max_output_tokens": 2000}),
+    },
+    "word_translation": {
+        "display_name": "Traduction de mots",
+        "description": (
+            "Prompt utilisé lors des sessions d'exercices quand un élève sélectionne "
+            "un mot pour obtenir une traduction instantanée. "
+            "La sortie doit être un JSON avec les champs `translation` et `examples`."
+        ),
+        "system_prompt": _SYSTEM_PROMPT_TRANSLATION,
+        "user_prompt_template": 'Traduis : "{word}"\nContexte : « {context} »',
+        "available_variables": json.dumps(["word", "context"]),
+        "parameters_json": json.dumps({"max_output_tokens": 300}),
     },
 }
 

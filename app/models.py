@@ -1088,6 +1088,33 @@ class WordTranslation(db.Model, TimestampMixin):
         return _json.loads(self.examples_json) if self.examples_json else []
 
 
+class SessionTranslationLog(db.Model, TimestampMixin):
+    """Log de chaque demande de traduction effectuée pendant une session élève.
+
+    Enregistré même pour les hits de cache (was_cached=True), contrairement
+    à AICallLog qui ne trace que les vrais appels IA.
+    """
+
+    __tablename__ = "session_translation_logs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    session_id = db.Column(
+        db.Integer, db.ForeignKey("practice_sessions.id"), nullable=True, index=True
+    )
+    student_id = db.Column(
+        db.Integer, db.ForeignKey("students.id"), nullable=True, index=True
+    )
+    word = db.Column(db.String(500), nullable=False)
+    translation = db.Column(db.Text, nullable=False)
+    was_cached = db.Column(db.Boolean, default=False, nullable=False)
+    ai_call_log_id = db.Column(
+        db.Integer, db.ForeignKey("ai_call_logs.id"), nullable=True
+    )
+
+    session = db.relationship("PracticeSession", backref="translation_logs")
+    student = db.relationship("Student", backref="translation_logs")
+
+
 DEFAULT_CATEGORY_NAMES: Sequence[tuple[str, str]] = (
     ("custom", "Personnalisé"),
     ("number_word", "Nombres ➜ mots"),

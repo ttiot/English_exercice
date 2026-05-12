@@ -67,6 +67,7 @@ from .models import (
     QuestionCategory,
     ReviewPlan,
     SessionExercise,
+    SessionTranslationLog,
     SkillPrerequisite,
     Student,
     StudentBadge,
@@ -1972,7 +1973,16 @@ def translate_word_api():
     if len(word) > MAX_WORD_LENGTH:
         return {"error": "Sélection trop longue (200 caractères max)."}, 400
 
-    result = translate_word(word, context)
+    raw_session_id = data.get("session_id")
+    try:
+        linked_session_id = int(raw_session_id) if raw_session_id is not None else None
+    except (TypeError, ValueError):
+        linked_session_id = None
+
+    user = _current_user()
+    student_id = user.id if user else None
+
+    result = translate_word(word, context, session_id=linked_session_id, student_id=student_id)
     if result is None:
         return {"error": "Traduction impossible. L'IA n'est pas disponible."}, 503
 
@@ -1996,6 +2006,12 @@ def session_summary(session_id: int):
         category.code: category.name for category in QuestionCategory.query.all()
     }
     last_reward = session.pop("last_reward", None)
+    translation_logs = (
+        SessionTranslationLog.query
+        .filter_by(session_id=session_id)
+        .order_by(SessionTranslationLog.created_at.asc())
+        .all()
+    )
     return render_template(
         "session_summary.html",
         session_obj=session_obj,
@@ -2003,6 +2019,7 @@ def session_summary(session_id: int):
         difficulty_labels=DIFFICULTY_DISPLAY,
         session_type_labels=SESSION_TYPE_LABELS,
         last_reward=last_reward,
+        translation_logs=translation_logs,
     )
 
 

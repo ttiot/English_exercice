@@ -212,6 +212,7 @@
   <script>
     (function () {
       const TRANSLATE_URL = "{{ url_for('main.translate_word_api') }}";
+      const SESSION_ID = {{ session_obj.id }};
       const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
       const tooltip = document.getElementById('translate-tooltip');
       const ttBody = document.getElementById('tt-body');
@@ -262,7 +263,7 @@
           fetch(TRANSLATE_URL, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
-            body: JSON.stringify({ word: word, context: context }),
+            body: JSON.stringify({ word: word, context: context, session_id: SESSION_ID }),
           })
             .then(function (r) { return r.json(); })
             .then(function (data) {
