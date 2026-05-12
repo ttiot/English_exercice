@@ -33,53 +33,55 @@
       {% endif %}
       <input id="avatar" name="avatar" type="file" accept="image/*" />
 
-      <label for="age">Âge</label>
-      <input id="age" name="age" type="number" min="3" max="120" placeholder="Ex. 11" value="{{ form_data.get('age', '') }}" />
+      <div id="student-fields">
+        <label for="age">Âge</label>
+        <input id="age" name="age" type="number" min="3" max="120" placeholder="Ex. 11" value="{{ form_data.get('age', '') }}" />
 
-      <label for="goals">Objectifs</label>
-      <textarea id="goals" name="goals" rows="3" placeholder="Ex. Réviser les nombres, travailler le vocabulaire...">{{ form_data.get('goals', '') }}</textarea>
+        <label for="goals">Objectifs</label>
+        <textarea id="goals" name="goals" rows="3" placeholder="Ex. Réviser les nombres, travailler le vocabulaire...">{{ form_data.get('goals', '') }}</textarea>
 
-      <label for="target_cefr_level">Niveau CECRL cible</label>
-      <select id="target_cefr_level" name="target_cefr_level">
-        <option value="">Choisir</option>
-        {% for level in cefr_levels %}
-          <option value="{{ level }}" {% if form_data.get('target_cefr_level') == level %}selected{% endif %}>{{ level }}</option>
-        {% endfor %}
-      </select>
+        <label for="target_cefr_level">Niveau CECRL cible</label>
+        <select id="target_cefr_level" name="target_cefr_level">
+          <option value="">Choisir</option>
+          {% for level in cefr_levels %}
+            <option value="{{ level }}" {% if form_data.get('target_cefr_level') == level %}selected{% endif %}>{{ level }}</option>
+          {% endfor %}
+        </select>
 
-      <div class="grid-two">
-        <div>
-          <label for="target_grade">Niveau scolaire</label>
-          <select id="target_grade" name="target_grade">
-            <option value="">Choisir</option>
-            {% for grade in grade_levels %}
-              <option value="{{ grade }}" {% if form_data.get('target_grade') == grade %}selected{% endif %}>{{ grade }}</option>
-            {% endfor %}
-          </select>
+        <div class="grid-two">
+          <div>
+            <label for="target_grade">Niveau scolaire</label>
+            <select id="target_grade" name="target_grade">
+              <option value="">Choisir</option>
+              {% for grade in grade_levels %}
+                <option value="{{ grade }}" {% if form_data.get('target_grade') == grade %}selected{% endif %}>{{ grade }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div>
+            <label for="target_trimester">Trimestre</label>
+            <select id="target_trimester" name="target_trimester">
+              <option value="">Choisir</option>
+              {% for trimester in trimester_choices %}
+                <option value="{{ trimester }}" {% if form_data.get('target_trimester')|string == trimester|string %}selected{% endif %}>{{ trimester }}</option>
+              {% endfor %}
+            </select>
+          </div>
         </div>
-        <div>
-          <label for="target_trimester">Trimestre</label>
-          <select id="target_trimester" name="target_trimester">
-            <option value="">Choisir</option>
-            {% for trimester in trimester_choices %}
-              <option value="{{ trimester }}" {% if form_data.get('target_trimester')|string == trimester|string %}selected{% endif %}>{{ trimester }}</option>
-            {% endfor %}
-          </select>
+
+        <label>Domaines prioritaires</label>
+        <div class="checkbox-group">
+          {% for code, label in domain_choices %}
+            <label class="checkbox-inline">
+              <input type="checkbox" name="preferred_domains" value="{{ code }}" {% if code in selected_domains %}checked{% endif %} />
+              {{ label }}
+            </label>
+          {% endfor %}
         </div>
-      </div>
 
-      <label>Domaines prioritaires</label>
-      <div class="checkbox-group">
-        {% for code, label in domain_choices %}
-          <label class="checkbox-inline">
-            <input type="checkbox" name="preferred_domains" value="{{ code }}" {% if code in selected_domains %}checked{% endif %} />
-            {{ label }}
-          </label>
-        {% endfor %}
+        <label for="interests">Centres d'intérêt</label>
+        <textarea id="interests" name="interests" rows="2" placeholder="Ex. Sport, musique, jeux vidéo...">{{ form_data.get('interests', '') }}</textarea>
       </div>
-
-      <label for="interests">Centres d'intérêt</label>
-      <textarea id="interests" name="interests" rows="2" placeholder="Ex. Sport, musique, jeux vidéo...">{{ form_data.get('interests', '') }}</textarea>
 
       <div class="grid-two">
         <div>
@@ -100,4 +102,17 @@
       <a class="btn btn-secondary" href="{{ url_for('main.admin_users') }}">Annuler</a>
     </form>
   </div>
+{% endblock %}
+{% block scripts %}
+<script>
+  (function () {
+    var roleSelect = document.getElementById('role');
+    var studentFields = document.getElementById('student-fields');
+    function toggle() {
+      studentFields.style.display = roleSelect.value === 'student' ? '' : 'none';
+    }
+    roleSelect.addEventListener('change', toggle);
+    toggle();
+  })();
+</script>
 {% endblock %}

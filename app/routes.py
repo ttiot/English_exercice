@@ -2975,6 +2975,15 @@ def admin_create_user():
             flash("Rôle invalide.", "danger")
             return _render(form_data, selected_domains)
 
+        if role != "student":
+            age_raw = ""
+            goals = None
+            target_cefr_level = None
+            target_grade = None
+            target_trimester_raw = ""
+            interests = None
+            preferred_domains = None
+
         if not validate_name(first_name):
             flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
             return _render(form_data, selected_domains)
@@ -3111,6 +3120,15 @@ def admin_edit_user(user_id: int):
         if role not in {"student", "parent", "admin"}:
             flash("Rôle invalide.", "danger")
             return _render(form_data, selected_domains)
+
+        if role != "student":
+            age_raw = ""
+            goals = None
+            target_cefr_level = None
+            target_grade = None
+            target_trimester_raw = ""
+            interests = None
+            preferred_domains = None
 
         current_user_obj = _current_user()
         if current_user_obj.id == target.id and role != "admin":
