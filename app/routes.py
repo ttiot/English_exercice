@@ -913,7 +913,16 @@ def index():
     latest_sessions = (
         PracticeSession.query.order_by(PracticeSession.started_at.desc()).limit(5).all()
     )
-    if user and not (user.is_parent() or user.is_admin()):
+    if user and user.is_parent():
+        students = sorted(user.managed_students, key=lambda s: s.created_at, reverse=True)
+        student_ids = {s.id for s in students}
+        latest_sessions = (
+            PracticeSession.query.filter(PracticeSession.student_id.in_(student_ids))
+            .order_by(PracticeSession.started_at.desc())
+            .limit(5)
+            .all()
+        ) if student_ids else []
+    elif user and not user.is_admin():
         students = [student for student in students if student.id == user.id]
         latest_sessions = (
             PracticeSession.query.filter_by(student_id=user.id)

@@ -15,6 +15,8 @@
           <label class="student-select-card">
             <input type="checkbox" name="student_ids" value="{{ student.id }}"
               {% if student in parent.managed_students %}checked{% endif %} />
+            <div class="student-select-card__avatar">{{ student.first_name[0] | upper }}{{ (student.last_name[0] | upper) if student.last_name else '' }}</div>
+            <span class="student-select-card__check">✓</span>
             <span class="student-select-card__name" title="{{ student.full_name() }}">{{ student.full_name() }}</span>
             {% if student.email %}<span class="student-select-card__email" title="{{ student.email }}">{{ student.email }}</span>{% endif %}
           </label>
