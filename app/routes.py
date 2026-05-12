@@ -3266,6 +3266,13 @@ def admin_email_config():
     )
 
 
+@bp.route("/admin/config")
+@_admin_required
+def admin_config_hub():
+    """Hub de configuration système et email."""
+    return render_template("admin/config_hub.html")
+
+
 # ─── Unified Exercise Manager ─────────────────────────────────────────────────
 
 

@@ -1,8 +1,8 @@
 {% extends 'base.html' %}
-{% block title %}Administration OpenAI{% endblock %}
+{% block title %}Intelligence Artificielle{% endblock %}
 {% block content %}
   <div class="card">
-    <h2>Administration OpenAI</h2>
+    <h2>Intelligence Artificielle</h2>
     <p class="muted">
       Tableau de bord central pour la configuration, l'observabilité et les
       prompts du service IA.
@@ -88,18 +88,6 @@
       <a class="hub-tile" href="{{ url_for('main.admin_openai_budget') }}">
         <h4>Budget</h4>
         <p class="muted">Consommation mois en cours et 3 derniers mois par type d'appel.</p>
-      </a>
-      <a class="hub-tile" href="{{ url_for('main.ai_exercise_pool') }}">
-        <h4>Pool d'exercices IA</h4>
-        <p class="muted">Liste des exercices générés, activation / désactivation.</p>
-      </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_system_config') }}">
-        <h4>Configuration système</h4>
-        <p class="muted">Clé de chiffrement des sauvegardes, paramètres d'infrastructure.</p>
-      </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_email_config') }}">
-        <h4>Configuration email</h4>
-        <p class="muted">SMTP, expéditeur, test de connexion.</p>
       </a>
     </div>
   </div>
