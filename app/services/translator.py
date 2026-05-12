@@ -4,9 +4,10 @@ Pipeline :
 1. Normalise le mot (minuscules + strip).
 2. Cherche en cache dans ``WordTranslation`` (cache global, toutes sessions confondues).
 3. Si absent : appelle l'IA avec un JSON schema strict, persiste le résultat.
-4. Retourne ``{"translation": str, "examples": list[str], "cached": bool}``.
+4. Dans tous les cas, logue dans ``SessionTranslationLog`` si un ``session_id`` est fourni.
+5. Retourne ``{"translation": str, "examples": list[str], "cached": bool}``.
 
-Tous les appels IA sont audités dans ``AICallLog`` via le mécanisme existant.
+Les appels IA sont également audités dans ``AICallLog`` via le mécanisme existant.
 """
 from __future__ import annotations
 
@@ -16,8 +17,8 @@ import time
 from typing import Optional
 
 from .. import db
-from ..models import AICallLog, WordTranslation
-from .ai_generator import get_openai_client
+from ..models import AICallLog, SessionTranslationLog, WordTranslation
+from .ai_generator import _SYSTEM_PROMPT_TRANSLATION, get_openai_client
 
 logger = logging.getLogger(__name__)
 
@@ -42,18 +43,55 @@ _TRANSLATION_SCHEMA = {
     },
 }
 
-_SYSTEM_PROMPT = (
-    "Tu es un assistant pédagogique pour des collégiens français (6ème/5ème) "
-    "qui apprennent l'anglais. Quand on te donne un mot ou une expression, "
-    "détecte sa langue, traduis-le dans l'autre langue (anglais ↔ français) "
-    "et donne 2 exemples d'utilisation simples adaptés au niveau collège, "
-    "chacun suivi de sa traduction entre parenthèses. "
-    "Réponds uniquement avec le JSON demandé, sans commentaire."
-)
+
+def _get_system_prompt() -> tuple[str, int]:
+    """Renvoie (system_prompt, max_output_tokens) depuis la BDD ou le fallback."""
+    try:
+        from ..models import OpenAIPrompt
+        prompt_obj = OpenAIPrompt.get_or_create_default("word_translation")
+        if prompt_obj:
+            params = prompt_obj.get_parameters()
+            return prompt_obj.system_prompt, params.get("max_output_tokens", 300)
+    except Exception:  # noqa: BLE001
+        pass
+    return _SYSTEM_PROMPT_TRANSLATION, 300
 
 
-def translate_word(word: str, context: str = "") -> Optional[dict]:
+def _log_session_translation(
+    session_id: int,
+    student_id: Optional[int],
+    word: str,
+    translation: str,
+    was_cached: bool,
+    ai_call_log_id: Optional[int],
+) -> None:
+    """Crée une entrée SessionTranslationLog et committe."""
+    try:
+        entry = SessionTranslationLog(
+            session_id=session_id,
+            student_id=student_id,
+            word=word,
+            translation=translation,
+            was_cached=was_cached,
+            ai_call_log_id=ai_call_log_id,
+        )
+        db.session.add(entry)
+        db.session.commit()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Impossible de loguer SessionTranslationLog : %s", exc)
+        db.session.rollback()
+
+
+def translate_word(
+    word: str,
+    context: str = "",
+    session_id: Optional[int] = None,
+    student_id: Optional[int] = None,
+) -> Optional[dict]:
     """Traduit ``word`` (avec ``context`` optionnel) et met en cache le résultat.
+
+    Si ``session_id`` est fourni, enregistre un ``SessionTranslationLog``
+    (même pour les hits de cache).
 
     Retourne ``None`` si l'IA n'est pas configurée ou en cas d'erreur.
     """
@@ -63,6 +101,15 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
 
     cached = WordTranslation.query.filter_by(word=normalized).first()
     if cached:
+        if session_id:
+            _log_session_translation(
+                session_id=session_id,
+                student_id=student_id,
+                word=normalized,
+                translation=cached.translation,
+                was_cached=True,
+                ai_call_log_id=None,
+            )
         return {
             "translation": cached.translation,
             "examples": cached.examples,
@@ -72,6 +119,8 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
     client, info = get_openai_client()
     if not client:
         return None
+
+    system_prompt, max_tokens = _get_system_prompt()
 
     user_prompt = f'Traduis : "{word}"'
     if context:
@@ -83,7 +132,7 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
         response = client.responses.create(
             model=info["model"],
             input=[
-                {"role": "system", "content": _SYSTEM_PROMPT},
+                {"role": "system", "content": system_prompt},
                 {"role": "user", "content": user_prompt},
             ],
             text={
@@ -94,7 +143,7 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
                     "strict": True,
                 }
             },
-            max_output_tokens=300,
+            max_output_tokens=max_tokens,
         )
         duration_ms = int((time.monotonic() - start) * 1000)
 
@@ -111,11 +160,11 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
         output_tokens = getattr(usage, "output_tokens", 0) if usage else 0
 
         AICallLog.log_call(
-            None,
+            student_id,
             call_type="word_translation",
             model=info["model"],
             api_key_source=info["source"],
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_text=raw,
             response_status="success",
@@ -132,17 +181,41 @@ def translate_word(word: str, context: str = "") -> Optional[dict]:
         db.session.add(entry)
         db.session.commit()
 
+        # Récupérer l'id du log IA créé (dernier log de ce type pour cet étudiant)
+        ai_log_id: Optional[int] = None
+        try:
+            last_log = (
+                AICallLog.query
+                .filter_by(call_type="word_translation", student_id=student_id)
+                .order_by(AICallLog.id.desc())
+                .first()
+            )
+            if last_log:
+                ai_log_id = last_log.id
+        except Exception:  # noqa: BLE001
+            pass
+
+        if session_id:
+            _log_session_translation(
+                session_id=session_id,
+                student_id=student_id,
+                word=normalized,
+                translation=translation,
+                was_cached=False,
+                ai_call_log_id=ai_log_id,
+            )
+
         return {"translation": translation, "examples": examples, "cached": False}
 
     except Exception as exc:  # noqa: BLE001
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.warning("Erreur traduction IA pour %r : %s", word, exc)
         AICallLog.log_call(
-            None,
+            student_id,
             call_type="word_translation",
             model=info["model"],
             api_key_source=info["source"],
-            system_prompt=_SYSTEM_PROMPT,
+            system_prompt=system_prompt,
             user_prompt=user_prompt,
             response_text="",
             response_status="error",
