@@ -1108,7 +1108,7 @@ class SessionTranslationLog(db.Model, TimestampMixin):
     translation = db.Column(db.Text, nullable=False)
     was_cached = db.Column(db.Boolean, default=False, nullable=False)
     ai_call_log_id = db.Column(
-        db.Integer, db.ForeignKey("ai_call_logs.id"), nullable=True
+        db.Integer, db.ForeignKey("ai_call_log.id"), nullable=True
     )
 
     session = db.relationship("PracticeSession", backref="translation_logs")
