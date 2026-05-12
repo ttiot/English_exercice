@@ -1623,6 +1623,8 @@ footer {
 }
 .student-select-card {
   position: relative;
+  min-width: 0;
+  overflow: hidden;
   background: var(--glass-bg);
   border: 1px solid var(--glass-border);
   border-radius: 14px;
@@ -1651,8 +1653,14 @@ footer {
 .student-select-card__name {
   font-weight: 600;
   font-size: 0.95rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .student-select-card__email {
   font-size: 0.78rem;
   color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
