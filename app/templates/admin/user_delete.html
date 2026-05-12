@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block title %}Supprimer {{ target.full_name() }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Supprimer le compte de {{ target.full_name() }}</h2>
+    <p class="muted">Cette action est irréversible. Toutes les données liées à ce compte seront définitivement effacées.</p>
+
+    <ul style="margin: 1rem 0; padding-left: 1.25rem;">
+      <li>Rôle : <strong>{{ target.role | capitalize }}</strong></li>
+      <li>E-mail : <strong>{{ target.email or '—' }}</strong></li>
+      <li>Sessions d'entraînement : <strong>{{ session_count }}</strong></li>
+      <li>Badges obtenus : <strong>{{ badge_count }}</strong></li>
+    </ul>
+
+    {% if session_count > 0 or badge_count > 0 %}
+    <p class="muted" style="color: var(--color-danger, #ef4444);">
+      L'historique d'entraînement et les badges seront définitivement perdus.
+    </p>
+    {% endif %}
+
+    <form method="post" style="margin-top: 1.5rem;">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      <button class="btn btn-danger" type="submit">Confirmer la suppression</button>
+      <a class="btn btn-secondary" href="{{ url_for('main.admin_users') }}">Annuler</a>
+    </form>
+  </div>
+{% endblock %}

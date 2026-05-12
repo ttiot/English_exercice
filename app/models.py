@@ -35,6 +35,13 @@ class TimestampMixin:
     )
 
 
+parent_student = db.Table(
+    "parent_student",
+    db.Column("parent_id", db.Integer, db.ForeignKey("students.id"), primary_key=True),
+    db.Column("student_id", db.Integer, db.ForeignKey("students.id"), primary_key=True),
+)
+
+
 class Student(db.Model, TimestampMixin):
     __tablename__ = "students"
 
@@ -56,6 +63,14 @@ class Student(db.Model, TimestampMixin):
     reset_token_expires_at = db.Column(db.DateTime, nullable=True)
 
     sessions = db.relationship("PracticeSession", backref="student", lazy=True)
+
+    managed_students = db.relationship(
+        "Student",
+        secondary=parent_student,
+        primaryjoin="Student.id == parent_student.c.parent_id",
+        secondaryjoin="Student.id == parent_student.c.student_id",
+        backref="parents",
+    )
 
     def full_name(self) -> str:
         if self.last_name:
@@ -1718,6 +1733,17 @@ def ensure_schema_migrations() -> None:
                 text("ALTER TABLE session_exercises ADD COLUMN ai_exercise_id INTEGER")
             )
             needs_commit = True
+
+    if "parent_student" not in table_names:
+        db.session.execute(
+            text(
+                "CREATE TABLE parent_student ("
+                "parent_id INTEGER NOT NULL REFERENCES students(id), "
+                "student_id INTEGER NOT NULL REFERENCES students(id), "
+                "PRIMARY KEY (parent_id, student_id))"
+            )
+        )
+        needs_commit = True
 
     if needs_commit:
         db.session.commit()

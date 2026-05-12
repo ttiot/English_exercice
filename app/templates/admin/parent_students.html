@@ -1,0 +1,34 @@
+{% extends 'base.html' %}
+{% block title %}Élèves de {{ parent.full_name() }}{% endblock %}
+{% block content %}
+  <div class="card">
+    <h2>Élèves de {{ parent.full_name() }}</h2>
+    <p class="muted">Cochez les élèves dont ce parent est responsable.</p>
+  </div>
+
+  <div class="card">
+    <form method="post">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+      {% if all_students %}
+        <ul class="checklist">
+          {% for student in all_students %}
+          <li class="checklist__item">
+            <label class="checklist__label">
+              <input type="checkbox" name="student_ids" value="{{ student.id }}"
+                {% if student in parent.managed_students %}checked{% endif %} />
+              {{ student.full_name() }}
+              {% if student.email %}<span class="muted"> — {{ student.email }}</span>{% endif %}
+            </label>
+          </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p class="muted">Aucun élève dans le système.</p>
+      {% endif %}
+      <div class="form-actions" style="margin-top:1rem;">
+        <button class="btn btn-primary" type="submit">Enregistrer</button>
+        <a class="btn btn-secondary" href="{{ url_for('main.admin_users') }}">Annuler</a>
+      </div>
+    </form>
+  </div>
+{% endblock %}

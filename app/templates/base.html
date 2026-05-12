@@ -9,6 +9,15 @@
     {% block extra_head %}{% endblock %}
   </head>
   <body>
+    {% if session.get('original_admin_id') %}
+    <div class="impersonation-banner">
+      <span>Mode impersonnification — vous agissez en tant que <strong>{{ current_user.full_name() }}</strong></span>
+      <form method="post" action="{{ url_for('main.stop_impersonation') }}" class="inline-form inline-form-compact">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+        <button class="btn btn-small btn-danger" type="submit">Arrêter</button>
+      </form>
+    </div>
+    {% endif %}
     <div id="loading-overlay" class="loading-overlay" aria-hidden="true">
       <div class="loading-spinner"></div>
       <p class="loading-message">Génération en cours&hellip;</p>

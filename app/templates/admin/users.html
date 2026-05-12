@@ -3,7 +3,8 @@
 {% block content %}
   <div class="card">
     <h2>Utilisateurs</h2>
-    <p class="muted">Modifiez le rôle d'un utilisateur pour lui accorder les droits parent ou administrateur.</p>
+    <p class="muted">Gérez les comptes : rôles, profils, et accès.</p>
+    <a class="btn btn-primary" href="{{ url_for('main.admin_create_user') }}">Créer un compte</a>
   </div>
 
   <div class="card">
@@ -33,6 +34,17 @@
             </select>
             <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
           </form>
+          <a class="btn btn-secondary btn-small" href="{{ url_for('main.admin_edit_user', user_id=user.id) }}">Éditer</a>
+          {% if user.role == 'parent' %}
+            <a class="btn btn-secondary btn-small" href="{{ url_for('main.admin_parent_students', parent_id=user.id) }}">Gérer les élèves</a>
+          {% endif %}
+          {% if user.id != current_user.id %}
+          <form method="post" action="{{ url_for('main.impersonate_user', user_id=user.id) }}" class="inline-form inline-form-compact">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
+            <button class="btn btn-secondary btn-small" type="submit">Impersonner</button>
+          </form>
+          <a class="btn btn-danger btn-small" href="{{ url_for('main.admin_delete_user', user_id=user.id) }}">Supprimer</a>
+          {% endif %}
         </div>
       {% else %}
         <p class="muted">Aucun utilisateur trouvé.</p>

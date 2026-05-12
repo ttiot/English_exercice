@@ -60,6 +60,7 @@ from .models import (
     OpenAIPrompt,
     _safe_format,
     PracticeSession,
+    PreparedExercise,
     PreparedExerciseQuestion,
     PreparedExerciseSet,
     ExerciseItem,
@@ -191,6 +192,19 @@ def _get_student_or_404(student_id: int) -> Student:
     if not student:
         abort(404)
     return student
+
+
+def _get_visible_students(user: Student) -> list:
+    if user.is_admin():
+        return Student.query.filter_by(role="student").order_by(Student.first_name).all()
+    return sorted(user.managed_students, key=lambda s: s.first_name)
+
+
+def _assert_student_access(user: Student, student: Student) -> None:
+    if user.is_admin():
+        return
+    if student not in user.managed_students:
+        abort(403)
 
 
 def _login_required(view):
@@ -1258,6 +1272,11 @@ def create_student():
         db.session.add(student)
         db.session.commit()
 
+        creator = _current_user()
+        if creator and creator.is_parent():
+            creator.managed_students.append(student)
+            db.session.commit()
+
         flash("Profil élève créé avec succès !", "success")
         return redirect(url_for("main.view_student", student_id=student.id))
 
@@ -1982,7 +2001,7 @@ def session_summary(session_id: int):
 @_parent_required
 def parent_dashboard():
     user = _current_user()
-    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
+    students = _get_visible_students(user)
     prepared_sets = (
         PreparedExerciseSet.query.filter_by(is_used=False)
         .order_by(PreparedExerciseSet.created_at.desc())
@@ -2035,6 +2054,7 @@ def parent_dashboard():
 @_parent_required
 def update_weekly_goal(student_id: int):
     student = _get_student_or_404(student_id)
+    _assert_student_access(_current_user(), student)
     week_start = _current_week_range()[0]
 
     try:
@@ -2065,6 +2085,7 @@ def update_weekly_goal(student_id: int):
 @_parent_required
 def export_quarter_report(student_id: int):
     student = _get_student_or_404(student_id)
+    _assert_student_access(_current_user(), student)
     today = date.today()
     quarter = request.args.get("quarter")
     year = request.args.get("year")
@@ -2196,7 +2217,8 @@ def export_quarter_report(student_id: int):
 @bp.route("/parents/prepared-exercises/new", methods=["GET", "POST"])
 @_parent_required
 def create_prepared_exercise():
-    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
+    user = _current_user()
+    students = _get_visible_students(user)
     categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
 
     if request.method == "POST":
@@ -2295,7 +2317,8 @@ def create_prepared_exercise():
 @bp.route("/parents/import", methods=["GET", "POST"])
 @_parent_required
 def import_exercises():
-    students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
+    user = _current_user()
+    students = _get_visible_students(user)
     categories = QuestionCategory.query.order_by(QuestionCategory.name).all()
     category_codes = {category.code for category in categories}
 
@@ -2636,6 +2659,7 @@ def delete_session(session_id: int):
         flash("Session introuvable ou déjà supprimée.", "warning")
         return redirect(url_for("main.parent_dashboard"))
 
+    _assert_student_access(_current_user(), session_obj.student)
     student_id = session_obj.student_id
 
     db.session.delete(session_obj)
@@ -2655,6 +2679,7 @@ def toggle_exercise_correct(session_id: int, exercise_id: int):
     exercise = SessionExercise.query.get_or_404(exercise_id)
     if exercise.session_id != session_id:
         abort(404)
+    _assert_student_access(_current_user(), session_obj.student)
 
     was_correct = exercise.is_correct
     exercise.is_correct = not was_correct
@@ -2692,6 +2717,7 @@ def edit_exercise(session_id: int, exercise_id: int):
     exercise = SessionExercise.query.get_or_404(exercise_id)
     if exercise.session_id != session_id:
         abort(404)
+    _assert_student_access(_current_user(), session_obj.student)
 
     categories = QuestionCategory.query.order_by(QuestionCategory.order_index).all()
 
@@ -2739,6 +2765,7 @@ def edit_exercise(session_id: int, exercise_id: int):
 @_parent_required
 def parent_generate_ai_exercises(student_id: int):
     student = _get_student_or_404(student_id)
+    _assert_student_access(_current_user(), student)
 
     if request.method == "POST":
         from .services.ai_generator import generate_exercises as ai_generate_exercises, get_openai_client, is_budget_exceeded
@@ -2845,6 +2872,398 @@ def update_user_role(user_id: int):
     db.session.commit()
     flash("Rôle utilisateur mis à jour.", "success")
     return redirect(url_for("main.admin_users"))
+
+
+@bp.route("/admin/users/<int:user_id>/impersonate", methods=["POST"])
+@_admin_required
+def impersonate_user(user_id: int):
+    if session.get("original_admin_id"):
+        flash("Terminez d'abord la session d'impersonnification en cours.", "warning")
+        return redirect(url_for("main.admin_users"))
+    target = _get_student_or_404(user_id)
+    session["original_admin_id"] = session["user_id"]
+    session["user_id"] = target.id
+    g.pop("current_user", None)
+    flash(f"Vous impersonnifiez {target.full_name()}.", "info")
+    return redirect(url_for("main.index"))
+
+
+@bp.route("/admin/stop-impersonation", methods=["POST"])
+def stop_impersonation():
+    original_id = session.pop("original_admin_id", None)
+    if not original_id:
+        return redirect(url_for("main.index"))
+    session["user_id"] = original_id
+    g.pop("current_user", None)
+    flash("Impersonnification terminée.", "success")
+    return redirect(url_for("main.admin_users"))
+
+
+@bp.route("/admin/users/<int:parent_id>/students", methods=["GET", "POST"])
+@_admin_required
+def admin_parent_students(parent_id: int):
+    parent = _get_student_or_404(parent_id)
+    if not parent.is_parent():
+        flash("Cet utilisateur n'est pas un parent.", "warning")
+        return redirect(url_for("main.admin_users"))
+
+    all_students = Student.query.filter_by(role="student").order_by(Student.first_name).all()
+
+    if request.method == "POST":
+        selected_ids = set()
+        for raw in request.form.getlist("student_ids"):
+            try:
+                selected_ids.add(int(raw))
+            except (ValueError, TypeError):
+                pass
+        parent.managed_students = [s for s in all_students if s.id in selected_ids]
+        db.session.commit()
+        flash("Rattachements mis à jour.", "success")
+        return redirect(url_for("main.admin_users"))
+
+    return render_template(
+        "admin/parent_students.html",
+        parent=parent,
+        all_students=all_students,
+    )
+
+
+@bp.route("/admin/users/new", methods=["GET", "POST"])
+@_admin_required
+def admin_create_user():
+    def _render(form_data, selected_domains):
+        return render_template(
+            "admin/user_form.html",
+            user=None,
+            form_data=form_data,
+            selected_domains=selected_domains,
+            cefr_levels=CEFR_LEVELS,
+            grade_levels=GRADE_LEVELS,
+            trimester_choices=TRIMESTER_CHOICES,
+            domain_choices=DOMAIN_CHOICES,
+        )
+
+    if request.method == "POST":
+        first_name = sanitize_text_input(request.form.get("first_name", ""))
+        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
+        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
+        age_raw = request.form.get("age", "").strip()
+        goals = sanitize_text_input(request.form.get("goals", "")) or None
+        target_cefr_level = request.form.get("target_cefr_level") or None
+        target_grade = request.form.get("target_grade") or None
+        target_trimester_raw = request.form.get("target_trimester") or ""
+        interests = sanitize_text_input(request.form.get("interests", "")) or None
+        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
+        role = request.form.get("role", "student").strip()
+        password = request.form.get("password", "")
+        password_confirm = request.form.get("password_confirm", "")
+        form_data = {
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "email": email_raw,
+            "age": age_raw,
+            "goals": goals or "",
+            "target_cefr_level": target_cefr_level or "",
+            "target_grade": target_grade or "",
+            "target_trimester": target_trimester_raw or "",
+            "interests": interests or "",
+            "role": role,
+        }
+        selected_domains = request.form.getlist("preferred_domains")
+
+        if role not in {"student", "parent", "admin"}:
+            flash("Rôle invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if not validate_name(first_name):
+            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
+            return _render(form_data, selected_domains)
+
+        if last_name and not validate_name(last_name):
+            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
+            return _render(form_data, selected_domains)
+
+        if not validate_email(email_raw):
+            flash("L'adresse e-mail n'est pas valide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if Student.query.filter_by(email=email_raw).first():
+            flash("Cette adresse e-mail est déjà utilisée.", "danger")
+            return _render(form_data, selected_domains)
+
+        password_valid, password_message = validate_password(password)
+        if not password_valid:
+            flash(password_message, "danger")
+            return _render(form_data, selected_domains)
+
+        if password != password_confirm:
+            flash("La confirmation du mot de passe ne correspond pas.", "danger")
+            return _render(form_data, selected_domains)
+
+        age_value = validate_age(age_raw)
+        if age_raw and age_value is None:
+            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
+            return _render(form_data, selected_domains)
+
+        if goals and not validate_goals(goals):
+            flash("Les objectifs contiennent du contenu invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if target_cefr_level and target_cefr_level not in CEFR_LEVELS:
+            flash("Le niveau CECRL est invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if target_grade and target_grade not in GRADE_LEVELS:
+            flash("Le niveau scolaire est invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        target_trimester = None
+        if target_trimester_raw:
+            try:
+                target_trimester = int(target_trimester_raw)
+            except ValueError:
+                flash("Le trimestre est invalide.", "danger")
+                return _render(form_data, selected_domains)
+            if target_trimester not in TRIMESTER_CHOICES:
+                flash("Le trimestre est invalide.", "danger")
+                return _render(form_data, selected_domains)
+
+        avatar_file = request.files.get("avatar")
+        avatar_filename: Optional[str] = None
+        if avatar_file and avatar_file.filename:
+            if not validate_image_file(avatar_file):
+                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
+                return _render(form_data, selected_domains)
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+            avatar_filename = f"{uuid4().hex}.{extension}"
+            avatar_file.save(Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename)
+
+        new_user = Student(
+            first_name=first_name,
+            last_name=last_name,
+            email=email_raw,
+            age=age_value,
+            goals=goals,
+            target_cefr_level=target_cefr_level,
+            target_grade=target_grade,
+            target_trimester=target_trimester,
+            interests=interests,
+            preferred_domains=preferred_domains or None,
+            avatar_filename=avatar_filename,
+            role=role,
+        )
+        new_user.set_password(password)
+        db.session.add(new_user)
+        db.session.commit()
+        flash(f"Compte « {new_user.full_name()} » créé.", "success")
+        return redirect(url_for("main.admin_users"))
+
+    return _render({}, [])
+
+
+@bp.route("/admin/users/<int:user_id>/edit", methods=["GET", "POST"])
+@_admin_required
+def admin_edit_user(user_id: int):
+    target = _get_student_or_404(user_id)
+
+    def _render(form_data, selected_domains):
+        return render_template(
+            "admin/user_form.html",
+            user=target,
+            form_data=form_data,
+            selected_domains=selected_domains,
+            cefr_levels=CEFR_LEVELS,
+            grade_levels=GRADE_LEVELS,
+            trimester_choices=TRIMESTER_CHOICES,
+            domain_choices=DOMAIN_CHOICES,
+        )
+
+    if request.method == "POST":
+        first_name = sanitize_text_input(request.form.get("first_name", ""))
+        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
+        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
+        age_raw = request.form.get("age", "").strip()
+        goals = sanitize_text_input(request.form.get("goals", "")) or None
+        target_cefr_level = request.form.get("target_cefr_level") or None
+        target_grade = request.form.get("target_grade") or None
+        target_trimester_raw = request.form.get("target_trimester") or ""
+        interests = sanitize_text_input(request.form.get("interests", "")) or None
+        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
+        role = request.form.get("role", target.role).strip()
+        password = request.form.get("password", "").strip()
+        password_confirm = request.form.get("password_confirm", "").strip()
+        remove_avatar = request.form.get("remove_avatar") == "on"
+        form_data = {
+            "first_name": first_name,
+            "last_name": last_name or "",
+            "email": email_raw,
+            "age": age_raw,
+            "goals": goals or "",
+            "target_cefr_level": target_cefr_level or "",
+            "target_grade": target_grade or "",
+            "target_trimester": target_trimester_raw or "",
+            "interests": interests or "",
+            "role": role,
+        }
+        selected_domains = request.form.getlist("preferred_domains")
+
+        if role not in {"student", "parent", "admin"}:
+            flash("Rôle invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        current_user_obj = _current_user()
+        if current_user_obj.id == target.id and role != "admin":
+            flash("Vous ne pouvez pas retirer votre propre rôle d'administrateur.", "warning")
+            return _render(form_data, selected_domains)
+
+        if not validate_name(first_name):
+            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
+            return _render(form_data, selected_domains)
+
+        if last_name and not validate_name(last_name):
+            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
+            return _render(form_data, selected_domains)
+
+        if not validate_email(email_raw):
+            flash("L'adresse e-mail n'est pas valide.", "danger")
+            return _render(form_data, selected_domains)
+
+        conflict = Student.query.filter(
+            Student.email == email_raw, Student.id != target.id
+        ).first()
+        if conflict:
+            flash("Cette adresse e-mail est déjà utilisée.", "danger")
+            return _render(form_data, selected_domains)
+
+        if password:
+            password_valid, password_message = validate_password(password)
+            if not password_valid:
+                flash(password_message, "danger")
+                return _render(form_data, selected_domains)
+            if password != password_confirm:
+                flash("La confirmation du mot de passe ne correspond pas.", "danger")
+                return _render(form_data, selected_domains)
+
+        age_value = validate_age(age_raw)
+        if age_raw and age_value is None:
+            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
+            return _render(form_data, selected_domains)
+
+        if goals and not validate_goals(goals):
+            flash("Les objectifs contiennent du contenu invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if target_cefr_level and target_cefr_level not in CEFR_LEVELS:
+            flash("Le niveau CECRL est invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        if target_grade and target_grade not in GRADE_LEVELS:
+            flash("Le niveau scolaire est invalide.", "danger")
+            return _render(form_data, selected_domains)
+
+        target_trimester = None
+        if target_trimester_raw:
+            try:
+                target_trimester = int(target_trimester_raw)
+            except ValueError:
+                flash("Le trimestre est invalide.", "danger")
+                return _render(form_data, selected_domains)
+            if target_trimester not in TRIMESTER_CHOICES:
+                flash("Le trimestre est invalide.", "danger")
+                return _render(form_data, selected_domains)
+
+        avatar_file = request.files.get("avatar")
+        new_avatar_filename: Optional[str] = None
+        if avatar_file and avatar_file.filename:
+            if not validate_image_file(avatar_file):
+                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
+                return _render(form_data, selected_domains)
+            sanitized = secure_filename(avatar_file.filename)
+            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
+            new_avatar_filename = f"{uuid4().hex}.{extension}"
+            avatar_file.save(Path(current_app.config["UPLOAD_FOLDER"]) / new_avatar_filename)
+
+        if remove_avatar and target.avatar_filename:
+            _delete_avatar_file(target.avatar_filename)
+            target.avatar_filename = None
+
+        if new_avatar_filename:
+            if target.avatar_filename:
+                _delete_avatar_file(target.avatar_filename)
+            target.avatar_filename = new_avatar_filename
+
+        target.first_name = first_name
+        target.last_name = last_name
+        target.email = email_raw
+        target.age = age_value
+        target.goals = goals
+        target.target_cefr_level = target_cefr_level
+        target.target_grade = target_grade
+        target.target_trimester = target_trimester
+        target.interests = interests
+        target.preferred_domains = preferred_domains or None
+        target.role = role
+        if password:
+            target.set_password(password)
+        db.session.commit()
+        flash("Compte mis à jour.", "success")
+        return redirect(url_for("main.admin_users"))
+
+    form_data = {
+        "first_name": target.first_name,
+        "last_name": target.last_name or "",
+        "email": target.email or "",
+        "age": str(target.age) if target.age else "",
+        "goals": target.goals or "",
+        "target_cefr_level": target.target_cefr_level or "",
+        "target_grade": target.target_grade or "",
+        "target_trimester": str(target.target_trimester) if target.target_trimester else "",
+        "interests": target.interests or "",
+        "role": target.role,
+    }
+    selected_domains = _domain_list(target.preferred_domains)
+    return _render(form_data, selected_domains)
+
+
+@bp.route("/admin/users/<int:user_id>/delete", methods=["GET", "POST"])
+@_admin_required
+def admin_delete_user(user_id: int):
+    target = _get_student_or_404(user_id)
+
+    if target.id == _current_user().id:
+        flash("Vous ne pouvez pas supprimer votre propre compte.", "warning")
+        return redirect(url_for("main.admin_users"))
+
+    if request.method == "POST":
+        name = target.full_name()
+
+        target.managed_students.clear()
+        for sess in list(target.sessions):
+            db.session.delete(sess)
+
+        WeeklyGoal.query.filter_by(student_id=target.id).delete()
+        StudentBadge.query.filter_by(student_id=target.id).delete()
+        ReviewPlan.query.filter_by(student_id=target.id).delete()
+        StudentSkillProgress.query.filter_by(student_id=target.id).delete()
+        PreparedExercise.query.filter_by(student_id=target.id).update({"student_id": None})
+        PreparedExerciseSet.query.filter_by(student_id=target.id).update({"student_id": None})
+        AICallLog.query.filter_by(student_id=target.id).update({"student_id": None})
+
+        _delete_avatar_file(target.avatar_filename)
+        db.session.delete(target)
+        db.session.commit()
+        flash(f"Compte « {name} » supprimé.", "success")
+        return redirect(url_for("main.admin_users"))
+
+    session_count = len(target.sessions)
+    badge_count = len(target.badges)
+    return render_template(
+        "admin/user_delete.html",
+        target=target,
+        session_count=session_count,
+        badge_count=badge_count,
+    )
 
 
 # --- Admin OpenAI ----------------------------------------------------------
@@ -3428,11 +3847,7 @@ def list_all_exercises():
     for r in page_items:
         r["category_name"] = cat_map.get(r["category_code"] or "", r["category_code"] or "—")
 
-    students = (
-        Student.query.filter(Student.role == "student")
-        .order_by(Student.first_name)
-        .all()
-    )
+    students = _get_visible_students(_current_user())
     student_map = {s.id: s.full_name() for s in students}
     all_categories = QuestionCategory.query.order_by(
         QuestionCategory.order_index, QuestionCategory.name
