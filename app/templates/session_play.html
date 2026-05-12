@@ -2,6 +2,44 @@
 {% block title %}Session d'exercices{% endblock %}
 {% block extra_head %}
   <meta name="csrf-token" content="{{ csrf_token() }}" />
+  <style>
+    #translate-tooltip {
+      position: fixed;
+      z-index: 9999;
+      background: var(--bg-card, #fff);
+      border: 1px solid var(--border, #d0d0d0);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.18);
+      padding: 8px 12px;
+      max-width: 320px;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      pointer-events: auto;
+    }
+    #translate-tooltip.hidden { display: none; }
+    #translate-tooltip .tt-btn {
+      background: var(--accent-cyan, #0ea5e9);
+      color: #fff;
+      border: none;
+      border-radius: 5px;
+      padding: 4px 10px;
+      cursor: pointer;
+      font-size: 0.85rem;
+      white-space: nowrap;
+    }
+    #translate-tooltip .tt-btn:hover { opacity: 0.85; }
+    #translate-tooltip .tt-result strong { color: var(--accent-cyan, #0ea5e9); }
+    #translate-tooltip .tt-examples { margin: 6px 0 0; padding-left: 1em; }
+    #translate-tooltip .tt-examples li { margin-bottom: 3px; }
+    #translate-tooltip .tt-error { color: var(--accent-red, #e05252); font-style: italic; }
+    #translate-tooltip .tt-close {
+      position: absolute;
+      top: 4px; right: 8px;
+      background: none; border: none;
+      cursor: pointer; font-size: 1rem; color: var(--muted, #888);
+      line-height: 1;
+    }
+  </style>
 {% endblock %}
 {% block content %}
   <div class="card">
@@ -63,6 +101,10 @@
       {% endfor %}
       <button class="btn btn-primary" type="submit">Terminer la session</button>
     </form>
+  </div>
+  <div id="translate-tooltip" class="hidden" role="tooltip" aria-live="polite">
+    <button class="tt-close" id="tt-close" aria-label="Fermer">✕</button>
+    <div id="tt-body"></div>
   </div>
 {% endblock %}
 {% block scripts %}
@@ -157,4 +199,122 @@
       }, 1000);
     </script>
   {% endif %}
+  <script>
+    (function () {
+      const TRANSLATE_URL = "{{ url_for('main.translate_word_api') }}";
+      const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
+      const tooltip = document.getElementById('translate-tooltip');
+      const ttBody = document.getElementById('tt-body');
+      const ttClose = document.getElementById('tt-close');
+
+      /* Zones de texte autorisées : prompts des exercices + consignes */
+      const SELECTABLE_SELECTORS = '.question p, p.instructions';
+
+      function insideSelectableZone(node) {
+        if (!node) return false;
+        return !!node.closest(SELECTABLE_SELECTORS);
+      }
+
+      function showTooltip(x, y, content) {
+        ttBody.innerHTML = content;
+        tooltip.classList.remove('hidden');
+        /* Positionnement au-dessus du mot sélectionné */
+        const tw = tooltip.offsetWidth || 280;
+        const th = tooltip.offsetHeight || 60;
+        const vw = window.innerWidth;
+        let left = x - tw / 2;
+        if (left < 8) left = 8;
+        if (left + tw > vw - 8) left = vw - tw - 8;
+        tooltip.style.left = left + 'px';
+        tooltip.style.top = (y - th - 10) + 'px';
+      }
+
+      function hideTooltip() {
+        tooltip.classList.add('hidden');
+        ttBody.innerHTML = '';
+      }
+
+      ttClose.addEventListener('click', hideTooltip);
+
+      document.addEventListener('mousedown', function (e) {
+        if (!tooltip.contains(e.target)) hideTooltip();
+      });
+
+      document.addEventListener('mouseup', function (e) {
+        /* Ignore clicks inside the tooltip itself */
+        if (tooltip.contains(e.target)) return;
+
+        setTimeout(function () {
+          const sel = window.getSelection();
+          if (!sel || sel.isCollapsed) return;
+
+          const word = sel.toString().trim();
+          if (!word || word.length > 200) return;
+
+          /* Check that the selection anchor is inside an allowed zone */
+          const anchorNode = sel.anchorNode;
+          const parentEl = anchorNode.nodeType === Node.TEXT_NODE
+            ? anchorNode.parentElement
+            : anchorNode;
+          if (!insideSelectableZone(parentEl)) return;
+
+          /* Position tooltip above the selection */
+          const range = sel.getRangeAt(0);
+          const rect = range.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + window.scrollY;
+
+          /* Gather surrounding sentence as context (up to 300 chars) */
+          const container = parentEl.closest(SELECTABLE_SELECTORS) || parentEl;
+          const context = (container.textContent || '').trim().slice(0, 300);
+
+          showTooltip(cx, cy,
+            '<button class="tt-btn" id="tt-translate-btn">Traduire 🔍</button>'
+          );
+
+          document.getElementById('tt-translate-btn').addEventListener('click', function () {
+            ttBody.innerHTML = '<em style="color:var(--muted,#888)">Traduction en cours…</em>';
+
+            fetch(TRANSLATE_URL, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': CSRF_TOKEN,
+              },
+              body: JSON.stringify({ word: word, context: context }),
+            })
+              .then(function (r) { return r.json(); })
+              .then(function (data) {
+                if (data.error) {
+                  ttBody.innerHTML = '<span class="tt-error">' + data.error + '</span>';
+                  return;
+                }
+                let html = '<div class="tt-result"><strong>' +
+                  escHtml(data.translation) + '</strong></div>';
+                if (data.examples && data.examples.length) {
+                  html += '<ul class="tt-examples">';
+                  data.examples.forEach(function (ex) {
+                    html += '<li>' + escHtml(ex) + '</li>';
+                  });
+                  html += '</ul>';
+                }
+                ttBody.innerHTML = html;
+                /* Re-position now that content is taller */
+                const rect2 = range.getBoundingClientRect();
+                const cy2 = rect2.top + window.scrollY;
+                showTooltip(cx, cy2, ttBody.innerHTML);
+              })
+              .catch(function () {
+                ttBody.innerHTML = '<span class="tt-error">Erreur réseau. Réessaie.</span>';
+              });
+          }, { once: true });
+        }, 10);
+      });
+
+      function escHtml(str) {
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
+                  .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+    })();
+  </script>
 {% endblock %}

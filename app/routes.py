@@ -71,6 +71,7 @@ from .models import (
     StudentBadge,
     StudentSkillProgress,
     WeeklyGoal,
+    WordTranslation,
 )
 from .validators import (
     validate_name,
@@ -1927,6 +1928,27 @@ def autosave_session(session_id: int):
             exercise.student_answer = raw[:255] if raw else None
     db.session.commit()
     return {"ok": True}
+
+
+@bp.route("/api/translate-word", methods=["POST"])
+@_login_required
+def translate_word_api():
+    from .services.translator import translate_word, MAX_WORD_LENGTH
+
+    data = request.get_json(silent=True) or {}
+    word = sanitize_text_input(str(data.get("word", "")).strip())
+    context = sanitize_text_input(str(data.get("context", "")).strip())
+
+    if not word:
+        return {"error": "Mot manquant."}, 400
+    if len(word) > MAX_WORD_LENGTH:
+        return {"error": "Sélection trop longue (200 caractères max)."}, 400
+
+    result = translate_word(word, context)
+    if result is None:
+        return {"error": "Traduction impossible. L'IA n'est pas disponible."}, 503
+
+    return result
 
 
 @bp.route("/sessions/<int:session_id>/summary")
