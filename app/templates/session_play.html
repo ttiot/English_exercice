@@ -40,6 +40,15 @@
       cursor: pointer; font-size: 1rem; color: var(--muted, #888);
       line-height: 1;
     }
+    /* Sur écrans tactiles : désactive la sélection native dans les zones traduisibles
+       pour éviter que la barre Android/iOS ne masque la pop-up custom. */
+    @media (pointer: coarse) {
+      .question p, p.instructions {
+        -webkit-user-select: none;
+        user-select: none;
+        cursor: pointer;
+      }
+    }
   </style>
 {% endblock %}
 {% block content %}
@@ -243,73 +252,113 @@
       document.addEventListener('mousedown', onPointerDown);
       document.addEventListener('touchstart', onPointerDown, { passive: true });
 
-      let selChangeTimer = null;
-      document.addEventListener('selectionchange', function () {
-        clearTimeout(selChangeTimer);
-        selChangeTimer = setTimeout(function () {
-          const sel = window.getSelection();
-          if (!sel || sel.isCollapsed) return;
-          if (tooltip.contains(document.activeElement)) return;
+      /* Logique de traduction commune aux deux chemins (desktop / mobile) */
+      function doTranslate(word, context, cx, range) {
+        showTooltip(cx, range.getBoundingClientRect().top,
+          '<button class="tt-btn" id="tt-translate-btn">Traduire 🔍</button>');
 
-          const word = sel.toString().trim();
-          if (!word || word.length > 200) return;
-
-          const anchorNode = sel.anchorNode;
-          const parentEl = anchorNode.nodeType === Node.TEXT_NODE
-            ? anchorNode.parentElement
-            : anchorNode;
-          if (!insideSelectableZone(parentEl)) return;
-
-          const range = sel.getRangeAt(0);
-          const rect = range.getBoundingClientRect();
-          const cx = rect.left + rect.width / 2;
-          const cy = rect.top;
-
-          const container = parentEl.closest(SELECTABLE_SELECTORS) || parentEl;
-          const context = (container.textContent || '').trim().slice(0, 300);
-
-          showTooltip(cx, cy,
-            '<button class="tt-btn" id="tt-translate-btn">Traduire 🔍</button>'
-          );
-
-          document.getElementById('tt-translate-btn').addEventListener('click', function () {
-            ttBody.innerHTML = '<em style="color:var(--muted,#888)">Traduction en cours…</em>';
-
-            fetch(TRANSLATE_URL, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'X-CSRFToken': CSRF_TOKEN,
-              },
-              body: JSON.stringify({ word: word, context: context }),
+        document.getElementById('tt-translate-btn').addEventListener('click', function () {
+          ttBody.innerHTML = '<em style="color:var(--muted,#888)">Traduction en cours…</em>';
+          fetch(TRANSLATE_URL, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRFToken': CSRF_TOKEN },
+            body: JSON.stringify({ word: word, context: context }),
+          })
+            .then(function (r) { return r.json(); })
+            .then(function (data) {
+              if (data.error) {
+                ttBody.innerHTML = '<span class="tt-error">' + data.error + '</span>';
+                return;
+              }
+              let html = '<div class="tt-result"><strong>' +
+                escHtml(data.translation) + '</strong></div>';
+              if (data.examples && data.examples.length) {
+                html += '<ul class="tt-examples">';
+                data.examples.forEach(function (ex) { html += '<li>' + escHtml(ex) + '</li>'; });
+                html += '</ul>';
+              }
+              ttBody.innerHTML = html;
+              showTooltip(cx, range.getBoundingClientRect().top, ttBody.innerHTML);
             })
-              .then(function (r) { return r.json(); })
-              .then(function (data) {
-                if (data.error) {
-                  ttBody.innerHTML = '<span class="tt-error">' + data.error + '</span>';
-                  return;
-                }
-                let html = '<div class="tt-result"><strong>' +
-                  escHtml(data.translation) + '</strong></div>';
-                if (data.examples && data.examples.length) {
-                  html += '<ul class="tt-examples">';
-                  data.examples.forEach(function (ex) {
-                    html += '<li>' + escHtml(ex) + '</li>';
-                  });
-                  html += '</ul>';
-                }
-                ttBody.innerHTML = html;
-                /* Re-position now that content is taller */
-                const rect2 = range.getBoundingClientRect();
-                const cy2 = rect2.top;
-                showTooltip(cx, cy2, ttBody.innerHTML);
-              })
-              .catch(function () {
-                ttBody.innerHTML = '<span class="tt-error">Erreur réseau. Réessaie.</span>';
-              });
-          }, { once: true });
-        }, 100);
-      });
+            .catch(function () {
+              ttBody.innerHTML = '<span class="tt-error">Erreur réseau. Réessaie.</span>';
+            });
+        }, { once: true });
+      }
+
+      /* Retourne un Range couvrant le mot sous les coordonnées (x, y) */
+      function getWordRangeAtPoint(x, y) {
+        var range;
+        if (document.caretRangeFromPoint) {
+          range = document.caretRangeFromPoint(x, y);
+        } else if (document.caretPositionFromPoint) {
+          var pos = document.caretPositionFromPoint(x, y);
+          if (!pos) return null;
+          range = document.createRange();
+          range.setStart(pos.offsetNode, pos.offset);
+          range.collapse(true);
+        }
+        if (!range || range.startContainer.nodeType !== Node.TEXT_NODE) return null;
+        var text = range.startContainer.textContent;
+        var s = range.startOffset, e = range.startOffset;
+        var isWord = function (ch) { return /[\wÀ-ÿ'']/i.test(ch); };
+        while (s > 0 && isWord(text[s - 1])) s--;
+        while (e < text.length && isWord(text[e])) e++;
+        if (s === e) return null;
+        range.setStart(range.startContainer, s);
+        range.setEnd(range.startContainer, e);
+        return range;
+      }
+
+      var isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
+
+      if (isTouchPrimary) {
+        /* Mobile : tap sur un mot → traduction directe, sans sélection native */
+        document.addEventListener('touchend', function (e) {
+          if (tooltip.contains(e.target)) return;
+          var touch = e.changedTouches[0];
+          var el = document.elementFromPoint(touch.clientX, touch.clientY);
+          if (!el || !insideSelectableZone(el)) return;
+
+          var range = getWordRangeAtPoint(touch.clientX, touch.clientY);
+          if (!range) return;
+          var word = range.toString().trim();
+          if (!word || word.length > 100) return;
+
+          var rect = range.getBoundingClientRect();
+          var cx = rect.left + rect.width / 2;
+          var container = el.closest(SELECTABLE_SELECTORS) || el;
+          var context = (container.textContent || '').trim().slice(0, 300);
+          doTranslate(word, context, cx, range);
+        });
+      } else {
+        /* Desktop : détection par sélection de texte */
+        var selChangeTimer = null;
+        document.addEventListener('selectionchange', function () {
+          clearTimeout(selChangeTimer);
+          selChangeTimer = setTimeout(function () {
+            var sel = window.getSelection();
+            if (!sel || sel.isCollapsed) return;
+            if (tooltip.contains(document.activeElement)) return;
+
+            var word = sel.toString().trim();
+            if (!word || word.length > 200) return;
+
+            var anchorNode = sel.anchorNode;
+            var parentEl = anchorNode.nodeType === Node.TEXT_NODE
+              ? anchorNode.parentElement
+              : anchorNode;
+            if (!insideSelectableZone(parentEl)) return;
+
+            var range = sel.getRangeAt(0);
+            var rect = range.getBoundingClientRect();
+            var cx = rect.left + rect.width / 2;
+            var container = parentEl.closest(SELECTABLE_SELECTORS) || parentEl;
+            var context = (container.textContent || '').trim().slice(0, 300);
+            doTranslate(word, context, cx, range);
+          }, 100);
+        });
+      }
 
       function escHtml(str) {
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;')
