@@ -46,6 +46,8 @@
       .question p, p.instructions {
         -webkit-user-select: none;
         user-select: none;
+        -webkit-touch-callout: none;
+        touch-action: manipulation;
         cursor: pointer;
       }
     }
@@ -314,6 +316,10 @@
       var isTouchPrimary = window.matchMedia('(pointer: coarse)').matches;
 
       if (isTouchPrimary) {
+        document.addEventListener('contextmenu', function (e) {
+          if (insideSelectableZone(e.target)) e.preventDefault();
+        });
+
         /* Mobile : tap sur un mot → traduction directe, sans sélection native */
         document.addEventListener('touchend', function (e) {
           if (tooltip.contains(e.target)) return;
@@ -326,6 +332,7 @@
           var word = range.toString().trim();
           if (!word || word.length > 100) return;
 
+          e.preventDefault();
           var rect = range.getBoundingClientRect();
           var cx = rect.left + rect.width / 2;
           var container = el.closest(SELECTABLE_SELECTORS) || el;
