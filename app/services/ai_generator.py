@@ -22,7 +22,8 @@ from typing import List, Optional, Tuple
 
 from .. import db
 from ..exercise_factory import AVAILABLE_CATEGORIES, ExercisePrompt
-from ..models import AICallLog, AIGeneratedExercise, OpenAIConfig, OpenAIPrompt
+from ..models import AIGeneratedExercise, OpenAIConfig, OpenAIPrompt
+from . import ai_analytics
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,7 @@ def is_budget_exceeded() -> bool:
     config = OpenAIConfig.get_active()
     if not config or not config.monthly_budget_usd:
         return False
-    spent = AICallLog.get_monthly_cost_usd()
+    spent = ai_analytics.get_monthly_cost_usd()
     return spent >= config.monthly_budget_usd
 
 
@@ -465,7 +466,7 @@ def generate_exercises(
     finally:
         duration_ms = int((time.monotonic() - started) * 1000)
 
-    log = AICallLog.log_call(
+    log = ai_analytics.log_call(
         student_id=student_id,
         call_type="generate_exercises",
         model=model,

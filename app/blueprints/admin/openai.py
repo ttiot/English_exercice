@@ -9,6 +9,7 @@ from flask import abort, flash, redirect, render_template, request, url_for
 from ...extensions import db
 from ...models import AICallLog, OpenAIConfig, OpenAIPrompt, Student
 from ...models.utils import _safe_format
+from ...services import ai_analytics
 from ...services.auth import _admin_required
 from ...validators import sanitize_text_input
 from . import bp
@@ -153,7 +154,7 @@ def admin_openai_budget():
         while month <= 0:
             month += 12
             year -= 1
-        months.append(AICallLog.get_monthly_stats(year=year, month=month))
+        months.append(ai_analytics.get_monthly_stats(year=year, month=month))
 
     current = months[0]
     budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
@@ -175,9 +176,9 @@ def admin_openai_budget():
 def admin_openai_hub():
     """Page d'accueil du panneau d'administration OpenAI."""
     config = OpenAIConfig.get_active()
-    current = AICallLog.get_monthly_stats()
-    success_stats = AICallLog.get_success_stats()
-    avg_latency = AICallLog.get_avg_latency_ms()
+    current = ai_analytics.get_monthly_stats()
+    success_stats = ai_analytics.get_success_stats()
+    avg_latency = ai_analytics.get_avg_latency_ms()
     has_key = bool(config and config.get_api_key())
     budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
     spent = float(current.get("cost_usd") or 0.0)
@@ -297,11 +298,11 @@ def admin_openai_prompt_reset(prompt_key: str):
 def admin_openai_statistics():
     """Tableau de bord d'usage OpenAI : trend annuel, top élèves, taux de succès."""
     config = OpenAIConfig.get_active()
-    current = AICallLog.get_monthly_stats()
-    success_stats = AICallLog.get_success_stats()
-    avg_latency = AICallLog.get_avg_latency_ms()
-    trend = AICallLog.get_yearly_trend(months=12)
-    top_students = AICallLog.get_top_students(limit=10)
+    current = ai_analytics.get_monthly_stats()
+    success_stats = ai_analytics.get_success_stats()
+    avg_latency = ai_analytics.get_avg_latency_ms()
+    trend = ai_analytics.get_yearly_trend(months=12)
+    top_students = ai_analytics.get_top_students(limit=10)
 
     budget = float(config.monthly_budget_usd) if config and config.monthly_budget_usd else None
     spent = float(current.get("cost_usd") or 0.0)
