@@ -63,7 +63,8 @@ def create_app():
         ensure_admin_account,
         ensure_schema_migrations,
     )
-    from .routes import bp as main_bp, _load_user_from_session
+    from .routes import bp as main_bp
+    from .services.auth import _load_user_from_session
 
     app.register_blueprint(main_bp)
 
