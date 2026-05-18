@@ -213,7 +213,7 @@
   {% endif %}
   <script>
     (function () {
-      const TRANSLATE_URL = "{{ url_for('main.translate_word_api') }}";
+      const TRANSLATE_URL = "{{ url_for('api.translate_word_api') }}";
       const SESSION_ID = {{ session_obj.id }};
       const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
       const tooltip = document.getElementById('translate-tooltip');

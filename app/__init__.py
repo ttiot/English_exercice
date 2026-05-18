@@ -63,10 +63,12 @@ def create_app():
         ensure_admin_account,
         ensure_schema_migrations,
     )
+    from .blueprints import register_blueprints
     from .routes import bp as main_bp
     from .services.auth import _load_user_from_session
 
     app.register_blueprint(main_bp)
+    register_blueprints(app)
 
     # --- SQLite PRAGMA au connect (WAL, etc.) ---
     @event.listens_for(Engine, "connect")

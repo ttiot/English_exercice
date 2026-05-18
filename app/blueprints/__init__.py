@@ -1,0 +1,13 @@
+"""Enregistrement centralisé des blueprints de l'application.
+
+Au fur et à mesure que les routes sont éclatées hors de ``app/routes.py``,
+on les enregistre ici depuis ``create_app()`` via ``register_blueprints``.
+"""
+
+from flask import Flask
+
+
+def register_blueprints(app: Flask) -> None:
+    from .api import bp as api_bp
+
+    app.register_blueprint(api_bp)
