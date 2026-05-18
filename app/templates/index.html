@@ -18,8 +18,8 @@
       </div>
     {% else %}
       <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        <a class="btn btn-secondary" href="{{ url_for('main.login') }}">Connexion</a>
-        <a class="btn btn-primary" href="{{ url_for('main.register') }}">Créer un compte élève</a>
+        <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">Connexion</a>
+        <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Créer un compte élève</a>
       </div>
     {% endif %}
   </section>

@@ -75,8 +75,8 @@ def _login_required(view):
     def wrapped_view(*args, **kwargs):
         user = _current_user()
         if not user:
-            next_url = request.url if request.method == "GET" else url_for("main.index")
-            return redirect(url_for("main.login", next=next_url))
+            next_url = request.url if request.method == "GET" else url_for("auth.index")
+            return redirect(url_for("auth.login", next=next_url))
         return view(*args, **kwargs)
 
     return wrapped_view
@@ -89,7 +89,7 @@ def _parent_required(view):
         user = _current_user()
         if not user or not (user.is_parent() or user.is_admin()):
             flash("Accès réservé aux parents ou à l'administrateur.", "warning")
-            return redirect(url_for("main.index"))
+            return redirect(url_for("auth.index"))
         return view(*args, **kwargs)
 
     return wrapped_view
@@ -102,7 +102,7 @@ def _admin_required(view):
         user = _current_user()
         if not user or not user.is_admin():
             flash("Seul l'administrateur peut effectuer cette action.", "warning")
-            return redirect(url_for("main.index"))
+            return redirect(url_for("auth.index"))
         return view(*args, **kwargs)
 
     return wrapped_view
@@ -116,13 +116,13 @@ def require_login() -> Optional[None]:
     statiques pour éviter les boucles.
     """
     endpoint = request.endpoint or ""
-    if endpoint in {"main.login", "main.register", "main.logout"}:
+    if endpoint in {"auth.login", "auth.register", "auth.logout"}:
         return None
     if endpoint.startswith("static"):
         return None
 
     user = _current_user()
     if not user:
-        next_url = request.url if request.method == "GET" else url_for("main.index")
-        return redirect(url_for("main.login", next=next_url))
+        next_url = request.url if request.method == "GET" else url_for("auth.index")
+        return redirect(url_for("auth.login", next=next_url))
     return None

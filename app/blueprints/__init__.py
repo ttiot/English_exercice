@@ -9,5 +9,7 @@ from flask import Flask
 
 def register_blueprints(app: Flask) -> None:
     from .api import bp as api_bp
+    from .auth import bp as auth_bp
 
+    app.register_blueprint(auth_bp)
     app.register_blueprint(api_bp)
