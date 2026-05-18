@@ -87,6 +87,21 @@ from .services.auth import (
     is_safe_url,
     require_login,
 )
+from .services.analytics import (
+    _build_simple_pdf,
+    _pdf_escape,
+    _quarter_range,
+    _student_recurring_errors,
+    _student_theme_summary,
+)
+from .services.answer_validation import (
+    _accepted_answers,
+    _is_answer_correct,
+    _normalize_answer,
+    _prompt_has_blank,
+    _session_exercise_kwargs,
+    _strip_article,
+)
 from .services.curriculum import (
     DOMAIN_CHOICES,
     _category_in_target,
@@ -102,6 +117,23 @@ from .services.curriculum import (
     _parse_domain_list,
     _recommend_difficulty,
 )
+from .services.gamification import (
+    DIFFICULTY_XP,
+    LEVEL_TITLES,
+    _award_badges,
+    _compute_activity_heatmap,
+    _compute_global_streak,
+    _compute_weekly_progress,
+    _compute_xp_and_level,
+    _current_week_range,
+    _get_weekly_goal,
+    _review_interval_days,
+    _select_instruction_language,
+    _update_progress_from_session,
+    _update_review_plan,
+    _week_start,
+)
+from .services.imports import _parse_import_rows
 from .validators import (
     validate_name,
     validate_email,
@@ -126,16 +158,6 @@ SESSION_TYPE_LABELS = {
     "prepared": "Parcours préparé",
     "ai_custom": "Prompt libre (IA)",
 }
-
-DIFFICULTY_XP = {"beginner": 10, "intermediate": 20, "advanced": 35}
-LEVEL_TITLES = [
-    (0, "Novice"),
-    (5, "Explorateur"),
-    (9, "Aventurier"),
-    (13, "Expert"),
-    (17, "Maître"),
-]
-
 
 def _csv_safe(value) -> str:
     """Préfixe les cellules CSV commençant par un caractère de formule (=, +, -, @, |, %)
@@ -196,434 +218,6 @@ def _delete_avatar_file(filename: Optional[str]) -> None:
             current_app.logger.warning("Impossible de supprimer l'ancien avatar %s", candidate)
 
 
-def _review_interval_days(mastery: float) -> int:
-    if mastery < 50:
-        return 1
-    if mastery < 70:
-        return 3
-    if mastery < 85:
-        return 7
-    return 14
-
-
-def _week_start(value: date) -> date:
-    return value - timedelta(days=value.weekday())
-
-
-def _current_week_range() -> Tuple[date, date]:
-    start = _week_start(date.today())
-    end = start + timedelta(days=6)
-    return start, end
-
-
-def _get_weekly_goal(student_id: int, week_start: date) -> Optional[WeeklyGoal]:
-    return WeeklyGoal.query.filter_by(student_id=student_id, week_start=week_start).first()
-
-
-def _compute_weekly_progress(student: Student, week_start: date) -> Dict[str, float]:
-    week_end = week_start + timedelta(days=6)
-    sessions = (
-        PracticeSession.query.filter(
-            PracticeSession.student_id == student.id,
-            PracticeSession.completed_at.isnot(None),
-            PracticeSession.started_at >= datetime.combine(week_start, datetime.min.time()),
-            PracticeSession.started_at <= datetime.combine(week_end, datetime.max.time()),
-        )
-        .all()
-    )
-    total_questions = sum(session.total_questions or 0 for session in sessions)
-    total_correct = sum(session.correct_answers or 0 for session in sessions)
-    total_seconds = sum(session.duration_seconds or 0 for session in sessions)
-    challenge_count = sum(1 for session in sessions if session.session_type == "challenge")
-    average_score = (total_correct / total_questions * 100) if total_questions else 0.0
-    return {
-        "sessions": len(sessions),
-        "minutes": round(total_seconds / 60, 1) if total_seconds else 0.0,
-        "accuracy": round(average_score, 1) if average_score else 0.0,
-        "challenges": challenge_count,
-    }
-
-
-def _select_instruction_language(student: Student) -> str:
-    if student.target_cefr_level and student.target_cefr_level.upper() == "A2":
-        return "en"
-    return "fr"
-
-
-def _compute_xp_and_level(sessions: list) -> dict:
-    xp = sum(
-        (s.correct_answers or 0) * DIFFICULTY_XP.get(s.difficulty or "beginner", 10)
-        for s in sessions if s.completed_at
-    )
-    level = min(20, int((xp / 50) ** 0.5) + 1)
-    xp_for_level = (level - 1) ** 2 * 50
-    xp_for_next = level ** 2 * 50
-    xp_progress_pct = int((xp - xp_for_level) / max(1, xp_for_next - xp_for_level) * 100)
-    title = next(t for lvl, t in reversed(LEVEL_TITLES) if level >= lvl)
-    return {
-        "xp": xp,
-        "level": level,
-        "title": title,
-        "xp_progress_pct": min(100, xp_progress_pct),
-        "xp_for_next": xp_for_next,
-    }
-
-
-def _compute_global_streak(sessions: list) -> int:
-    completed_dates = {s.started_at.date() for s in sessions if s.completed_at and s.started_at}
-    if not completed_dates:
-        return 0
-    streak = 0
-    check_date = date.today()
-    while check_date in completed_dates:
-        streak += 1
-        check_date -= timedelta(days=1)
-    return streak
-
-
-def _compute_activity_heatmap(sessions: list) -> list:
-    counts: dict = {}
-    for s in sessions:
-        if s.completed_at and s.started_at:
-            d = s.started_at.date().isoformat()
-            counts[d] = counts.get(d, 0) + 1
-    today = date.today()
-    return [
-        {"date": (today - timedelta(days=i)).isoformat(),
-         "count": counts.get((today - timedelta(days=i)).isoformat(), 0)}
-        for i in range(34, -1, -1)
-    ]
-
-
-def _award_badges(student_id: int) -> None:
-    progress_entries = StudentSkillProgress.query.filter_by(student_id=student_id).all()
-    progress_map = {entry.category_id: entry for entry in progress_entries}
-    badges = Badge.query.all()
-    earned = {item.badge_id for item in StudentBadge.query.filter_by(student_id=student_id).all()}
-    changed = False
-    for badge in badges:
-        if badge.id in earned:
-            continue
-        if badge.category_id is None:
-            continue
-        progress = progress_map.get(badge.category_id)
-        if not progress:
-            continue
-        if progress.mastery >= badge.min_mastery and progress.correct_streak >= badge.min_streak:
-            db.session.add(StudentBadge(student_id=student_id, badge_id=badge.id))
-            changed = True
-    if changed:
-        db.session.flush()
-
-
-def _update_review_plan(session_obj: PracticeSession) -> None:
-    today = date.today()
-    categories = {exercise.category for exercise in session_obj.exercises}
-    category_lookup = {
-        category.code: category for category in QuestionCategory.query.filter(
-            QuestionCategory.code.in_(categories)
-        ).all()
-    }
-
-    for category_code, category in category_lookup.items():
-        ReviewPlan.query.filter(
-            ReviewPlan.student_id == session_obj.student_id,
-            ReviewPlan.category_id == category.id,
-            ReviewPlan.due_date <= today,
-            ReviewPlan.completed.is_(False),
-        ).update({"completed": True})
-
-        progress = StudentSkillProgress.query.filter_by(
-            student_id=session_obj.student_id,
-            category_id=category.id,
-        ).first()
-        mastery = progress.mastery if progress else 0.0
-        interval = _review_interval_days(mastery)
-        for multiplier in (1, 2, 4):
-            due_date = today + timedelta(days=interval * multiplier)
-            existing = ReviewPlan.query.filter_by(
-                student_id=session_obj.student_id,
-                category_id=category.id,
-                due_date=due_date,
-            ).first()
-            if not existing:
-                db.session.add(
-                    ReviewPlan(
-                        student_id=session_obj.student_id,
-                        category_id=category.id,
-                        due_date=due_date,
-                    )
-                )
-
-    db.session.flush()
-
-
-def _normalize_answer(value: str, loose: bool = False) -> str:
-    normalized = value.strip().lower()
-    normalized = normalized.replace("’", "'").replace("‘", "'").replace("`", "'")
-    normalized = " ".join(normalized.split())
-    if not loose:
-        return normalized
-    import unicodedata
-
-    normalized = unicodedata.normalize("NFKD", normalized)
-    normalized = "".join(char for char in normalized if not unicodedata.combining(char))
-    return normalized
-
-
-_ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+")
-
-
-def _strip_article(text: str) -> str:
-    return _ARTICLE_RE.sub("", text)
-
-
-def _prompt_has_blank(prompt: str) -> bool:
-    if not prompt:
-        return False
-    return bool(re.search(r"_{3,}|\\.{3,}|…", prompt))
-
-
-def _accepted_answers(exercise: SessionExercise) -> List[str]:
-    """Liste des réponses acceptées : `correct_answer` + variantes JSON."""
-    answers: List[str] = []
-    if exercise.correct_answer:
-        answers.append(exercise.correct_answer)
-    raw = getattr(exercise, "accepted_answers_json", None)
-    if raw:
-        try:
-            extra = json.loads(raw)
-            if isinstance(extra, list):
-                answers.extend(str(item) for item in extra if item)
-        except (ValueError, TypeError):
-            pass
-    return answers
-
-
-def _is_answer_correct(exercise: SessionExercise) -> bool:
-    user_answer = exercise.student_answer or ""
-    candidates = _accepted_answers(exercise)
-    if not candidates:
-        return False
-
-    strict_actual = _normalize_answer(user_answer, loose=False)
-    question_type = getattr(exercise, "question_type", "text") or "text"
-
-    # QCM : l'élève a cliqué un bouton, on exige le match exact (case/espaces).
-    if question_type == "mcq":
-        return any(
-            strict_actual == _normalize_answer(answer, loose=False)
-            for answer in candidates
-        )
-
-    translation_categories = {
-        "translate_en_fr",
-        "translate_fr_en",
-        "sentence_en_fr",
-        "sentence_fr_en",
-        "interrogative_words",
-    }
-    loose_eligible = exercise.category in translation_categories
-    loose_actual = _normalize_answer(user_answer, loose=True) if loose_eligible else None
-
-    has_blank = _prompt_has_blank(exercise.prompt)
-
-    for answer in candidates:
-        strict_expected = _normalize_answer(answer, loose=False)
-        if strict_expected == strict_actual:
-            return True
-        if loose_eligible:
-            if _normalize_answer(answer, loose=True) == loose_actual:
-                return True
-        if has_blank:
-            pattern = rf"\b{re.escape(strict_expected)}\b"
-            if re.search(pattern, strict_actual):
-                return True
-
-    # Tolérance articles : "a dress" ≅ "dress", "an apple" ≅ "apple"
-    if question_type != "mcq":
-        stripped_actual = _strip_article(strict_actual)
-        if stripped_actual:
-            for answer in candidates:
-                stripped_expected = _strip_article(_normalize_answer(answer, loose=False))
-                if stripped_actual == stripped_expected:
-                    return True
-                if loose_eligible and loose_actual is not None:
-                    if _strip_article(loose_actual) == _strip_article(
-                        _normalize_answer(answer, loose=True)
-                    ):
-                        return True
-
-    return False
-
-
-def _session_exercise_kwargs(
-    prompt: ExercisePrompt,
-    *,
-    source: str = "procedural",
-    ai_exercise_id: Optional[int] = None,
-) -> dict:
-    """Convertit un ``ExercisePrompt`` en kwargs pour ``SessionExercise(...)``."""
-    return {
-        "prompt": prompt.prompt,
-        "correct_answer": prompt.answer,
-        "category": prompt.category,
-        "question_type": prompt.question_type,
-        "options_json": json.dumps(list(prompt.options)) if prompt.options else None,
-        "accepted_answers_json": (
-            json.dumps(list(prompt.accepted_answers))
-            if prompt.accepted_answers
-            else None
-        ),
-        "source": source,
-        "ai_exercise_id": ai_exercise_id,
-    }
-
-
-def _quarter_range(year: int, quarter: int) -> Tuple[date, date]:
-    quarter = max(1, min(4, quarter))
-    start_month = (quarter - 1) * 3 + 1
-    end_month = start_month + 2
-    start = date(year, start_month, 1)
-    last_day = calendar.monthrange(year, end_month)[1]
-    end = date(year, end_month, last_day)
-    return start, end
-
-
-def _pdf_escape(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("(", "\\(").replace(")", "\\)")
-
-
-def _build_simple_pdf(lines: List[str]) -> bytes:
-    content_lines = ["BT", "/F1 12 Tf", "50 780 Td"]
-    for line in lines:
-        safe = _pdf_escape(line)
-        content_lines.append(f"({safe}) Tj")
-        content_lines.append("0 -16 Td")
-    content_lines.append("ET")
-    content = "\n".join(content_lines)
-
-    objects = []
-    objects.append("1 0 obj << /Type /Catalog /Pages 2 0 R >> endobj")
-    objects.append("2 0 obj << /Type /Pages /Kids [3 0 R] /Count 1 >> endobj")
-    objects.append(
-        "3 0 obj << /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] "
-        "/Resources << /Font << /F1 5 0 R >> >> /Contents 4 0 R >> endobj"
-    )
-    objects.append(f"4 0 obj << /Length {len(content.encode('utf-8'))} >> stream\n{content}\nendstream endobj")
-    objects.append("5 0 obj << /Type /Font /Subtype /Type1 /BaseFont /Helvetica >> endobj")
-
-    xref_positions = []
-    output = ["%PDF-1.4"]
-    offset = len(output[0]) + 1
-    for obj in objects:
-        xref_positions.append(offset)
-        output.append(obj)
-        offset += len(obj.encode("utf-8")) + 1
-
-    xref_start = offset
-    xref = ["xref", f"0 {len(objects) + 1}", "0000000000 65535 f "]
-    for pos in xref_positions:
-        xref.append(f"{pos:010} 00000 n ")
-    output.extend(xref)
-    output.append(
-        "trailer << /Size {size} /Root 1 0 R >>".format(size=len(objects) + 1)
-    )
-    output.append(f"startxref\n{xref_start}\n%%EOF")
-    return "\n".join(output).encode("utf-8")
-
-
-def _student_theme_summary(student_id: int) -> List[Dict[str, object]]:
-    exercises = (
-        SessionExercise.query.join(PracticeSession)
-        .filter(PracticeSession.student_id == student_id)
-        .all()
-    )
-    category_lookup = {
-        category.code: category for category in QuestionCategory.query.all()
-    }
-    domain_labels = {code: label for code, label in DOMAIN_CHOICES}
-    stats: Dict[str, Dict[str, int]] = defaultdict(lambda: {"total": 0, "correct": 0})
-    for exercise in exercises:
-        category = category_lookup.get(exercise.category)
-        domain = category.domain if category and category.domain else "autre"
-        stats[domain]["total"] += 1
-        if exercise.is_correct:
-            stats[domain]["correct"] += 1
-    summary = []
-    for domain, values in stats.items():
-        total = values["total"]
-        correct = values["correct"]
-        rate = (correct / total * 100) if total else 0
-        summary.append(
-            {
-                "domain": domain_labels.get(domain, domain),
-                "total": total,
-                "correct": correct,
-                "rate": round(rate, 1) if rate else 0,
-            }
-        )
-    return sorted(summary, key=lambda item: item["domain"])
-
-
-def _student_recurring_errors(student_id: int, limit: int = 5) -> List[Dict[str, object]]:
-    exercises = (
-        SessionExercise.query.join(PracticeSession)
-        .filter(PracticeSession.student_id == student_id, SessionExercise.is_correct.is_(False))
-        .all()
-    )
-    counts: Dict[str, Dict[str, object]] = {}
-    for exercise in exercises:
-        key = f"{exercise.category}:{exercise.prompt}"
-        entry = counts.setdefault(
-            key, {"prompt": exercise.prompt, "category": exercise.category, "count": 0}
-        )
-        entry["count"] += 1
-    sorted_errors = sorted(counts.values(), key=lambda item: item["count"], reverse=True)
-    return sorted_errors[:limit]
-
-
-def _parse_import_rows(
-    file_content: str, import_format: str, delimiter: str
-) -> List[Dict[str, str]]:
-    rows: List[Dict[str, str]] = []
-    if import_format == "anki":
-        for raw_line in file_content.splitlines():
-            line = raw_line.strip()
-            if not line:
-                continue
-            if "\t" in line:
-                parts = [part.strip() for part in line.split("\t", 2)]
-            elif ";" in line:
-                parts = [part.strip() for part in line.split(";", 2)]
-            else:
-                parts = [part.strip() for part in line.split(",", 2)]
-            if len(parts) < 2:
-                continue
-            rows.append({"prompt": parts[0], "answer": parts[1], "category": "custom"})
-        return rows
-
-    safe_delimiter = (delimiter or ",")[0]
-    csv_reader = csv.reader(StringIO(file_content), delimiter=safe_delimiter)
-    headers: List[str] = []
-    for index, row in enumerate(csv_reader):
-        if not row:
-            continue
-        if index == 0 and any(cell.lower() in {"prompt", "question", "answer", "reponse"} for cell in row):
-            headers = [cell.strip().lower() for cell in row]
-            continue
-        if headers:
-            row_map = {headers[i]: row[i].strip() if i < len(row) else "" for i in range(len(headers))}
-            prompt = row_map.get("prompt") or row_map.get("question") or ""
-            answer = row_map.get("answer") or row_map.get("reponse") or ""
-            category = row_map.get("category") or row_map.get("categorie") or "custom"
-        else:
-            prompt = row[0].strip() if len(row) > 0 else ""
-            answer = row[1].strip() if len(row) > 1 else ""
-            category = row[2].strip() if len(row) > 2 else "custom"
-        if prompt and answer:
-            rows.append({"prompt": prompt, "answer": answer, "category": category or "custom"})
-    return rows
 
 
 
