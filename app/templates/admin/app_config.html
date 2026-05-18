@@ -9,7 +9,7 @@
         <p class="muted">Paramètres applicatifs globaux : sauvegardes, chiffrement et options d'infrastructure.</p>
       </div>
       <div class="card-actions">
-        <a class="btn btn-secondary" href="{{ url_for('main.admin_config_hub') }}">← Configuration</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.admin_config_hub') }}">← Configuration</a>
       </div>
     </div>
   </div>
@@ -50,7 +50,7 @@
         Génère une clé Fernet aléatoire, l'enregistre et l'affiche <strong>une seule fois</strong>.
         Notez-la immédiatement dans votre gestionnaire de mots de passe.
       </p>
-      <form method="post" action="{{ url_for('main.admin_system_config') }}"
+      <form method="post" action="{{ url_for('admin.admin_system_config') }}"
             onsubmit="return confirm('Générer une nouvelle clé ? L\'ancienne sera écrasée et les anciens backups deviendront illisibles.');">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <input type="hidden" name="action" value="generate_backup_key" />
@@ -67,7 +67,7 @@
         Collez ici une clé Fernet base64 (44 caractères) si vous voulez
         reprendre une clé existante (ex. après réinstallation).
       </p>
-      <form method="post" action="{{ url_for('main.admin_system_config') }}" class="sys-key-form">
+      <form method="post" action="{{ url_for('admin.admin_system_config') }}" class="sys-key-form">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <input type="hidden" name="action" value="save_backup_key" />
         <input type="password" name="backup_key" placeholder="Clé Fernet base64 (44 car.)"
@@ -85,7 +85,7 @@
           Supprime la clé de la base et efface <code>/data/.backup_key</code>.
           Les prochains backups ne seront plus chiffrés.
         </p>
-        <form method="post" action="{{ url_for('main.admin_system_config') }}"
+        <form method="post" action="{{ url_for('admin.admin_system_config') }}"
               onsubmit="return confirm('Supprimer la clé de chiffrement ? Les prochains backups ne seront plus chiffrés.');">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
           <input type="hidden" name="action" value="clear_backup_key" />

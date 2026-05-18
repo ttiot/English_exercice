@@ -99,7 +99,7 @@
       </div>
 
       <button class="btn btn-primary" type="submit">{% if user %}Enregistrer{% else %}Créer le compte{% endif %}</button>
-      <a class="btn btn-secondary" href="{{ url_for('main.admin_users') }}">Annuler</a>
+      <a class="btn btn-secondary" href="{{ url_for('admin.admin_users') }}">Annuler</a>
     </form>
   </div>
 {% endblock %}

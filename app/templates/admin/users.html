@@ -4,7 +4,7 @@
   <div class="card">
     <h2>Utilisateurs</h2>
     <p class="muted">Gérez les comptes : rôles, profils, et accès.</p>
-    <a class="btn btn-primary" href="{{ url_for('main.admin_create_user') }}">Créer un compte</a>
+    <a class="btn btn-primary" href="{{ url_for('admin.admin_create_user') }}">Créer un compte</a>
   </div>
 
   <div class="card">
@@ -25,7 +25,7 @@
             </span>
           </div>
           <form class="account-card__form" method="post"
-                action="{{ url_for('main.update_user_role', user_id=user.id) }}">
+                action="{{ url_for('admin.update_user_role', user_id=user.id) }}">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <select name="role" class="account-card__select">
               <option value="student" {% if user.role == 'student' %}selected{% endif %}>Élève</option>
@@ -34,16 +34,16 @@
             </select>
             <button class="btn btn-secondary btn-small" type="submit">Enregistrer</button>
           </form>
-          <a class="btn btn-secondary btn-small" href="{{ url_for('main.admin_edit_user', user_id=user.id) }}">Éditer</a>
+          <a class="btn btn-secondary btn-small" href="{{ url_for('admin.admin_edit_user', user_id=user.id) }}">Éditer</a>
           {% if user.role == 'parent' %}
-            <a class="btn btn-secondary btn-small" href="{{ url_for('main.admin_parent_students', parent_id=user.id) }}">Gérer les élèves</a>
+            <a class="btn btn-secondary btn-small" href="{{ url_for('admin.admin_parent_students', parent_id=user.id) }}">Gérer les élèves</a>
           {% endif %}
           {% if user.id != current_user.id %}
-          <form method="post" action="{{ url_for('main.impersonate_user', user_id=user.id) }}" class="inline-form inline-form-compact">
+          <form method="post" action="{{ url_for('admin.impersonate_user', user_id=user.id) }}" class="inline-form inline-form-compact">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
             <button class="btn btn-secondary btn-small" type="submit">Impersonner</button>
           </form>
-          <a class="btn btn-danger btn-small" href="{{ url_for('main.admin_delete_user', user_id=user.id) }}">Supprimer</a>
+          <a class="btn btn-danger btn-small" href="{{ url_for('admin.admin_delete_user', user_id=user.id) }}">Supprimer</a>
           {% endif %}
         </div>
       {% else %}

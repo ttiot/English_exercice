@@ -12,7 +12,7 @@
     {% if session.get('original_admin_id') %}
     <div class="impersonation-banner">
       <span>Mode impersonnification — vous agissez en tant que <strong>{{ current_user.full_name() }}</strong></span>
-      <form method="post" action="{{ url_for('main.stop_impersonation') }}" class="inline-form inline-form-compact">
+      <form method="post" action="{{ url_for('admin.stop_impersonation') }}" class="inline-form inline-form-compact">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <button class="btn btn-small btn-danger" type="submit">Arrêter</button>
       </form>
@@ -61,9 +61,9 @@
             Administration <span class="dropdown-arrow">▾</span>
           </span>
           <div class="nav-dropdown-menu">
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_openai_hub') }}">Intelligence Artificielle</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_config_hub') }}">Configuration</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_openai_hub') }}">Intelligence Artificielle</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_config_hub') }}">Configuration</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_users') }}">Utilisateurs</a>
           </div>
         </div>
         {% endif %}
