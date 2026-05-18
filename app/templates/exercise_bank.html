@@ -6,7 +6,7 @@
     <p class="muted">
       Filtrez les catégories par niveau et thème.
       {% if current_user and (current_user.is_parent() or current_user.is_admin()) %}
-        · <a href="{{ url_for('main.ai_exercise_pool') }}">Pool d'exercices IA →</a>
+        · <a href="{{ url_for('exercise_bank.ai_exercise_pool') }}">Pool d'exercices IA →</a>
       {% endif %}
     </p>
     <form method="get" class="inline-form">
@@ -40,7 +40,7 @@
 
   <div class="card">
     <h3>Générer de nouvelles questions</h3>
-    <form method="post" action="{{ url_for('main.generate_exercises_from_bank') }}" class="inline-form">
+    <form method="post" action="{{ url_for('exercise_bank.generate_exercises_from_bank') }}" class="inline-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="domain" value="{{ selected_domain }}" />
       <input type="hidden" name="cefr" value="{{ selected_cefr }}" />
@@ -81,7 +81,7 @@
   {% if current_user and (current_user.is_parent() or current_user.is_admin()) %}
     <div class="card">
       <h3>Ajouter du contenu personnalisé</h3>
-      <form method="post" action="{{ url_for('main.add_exercise_item') }}">
+      <form method="post" action="{{ url_for('exercise_bank.add_exercise_item') }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <label for="category_code">Catégorie</label>
         <select id="category_code" name="category_code" required>
@@ -116,7 +116,7 @@
               </div>
               <p>{{ item.prompt }}</p>
               <p class="muted">Réponse : <strong>{{ item.answer }}</strong></p>
-              <form method="post" action="{{ url_for('main.delete_exercise_item', item_id=item.id) }}">
+              <form method="post" action="{{ url_for('exercise_bank.delete_exercise_item', item_id=item.id) }}">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <button class="btn btn-danger btn-small" type="submit" onclick="return confirm('Supprimer cette question ?');">Supprimer</button>
               </form>

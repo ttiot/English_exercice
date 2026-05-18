@@ -4,7 +4,7 @@
   <div class="card">
     <h2>Pool d'exercices générés par l'IA</h2>
     <p class="muted">
-      <a href="{{ url_for('main.exercise_bank') }}">← Banque d'exercices</a>
+      <a href="{{ url_for('exercise_bank.exercise_bank') }}">← Banque d'exercices</a>
     </p>
     <p class="muted">
       Chaque exercice IA est conservé après sa première utilisation et peut
@@ -36,7 +36,7 @@
                 <span class="badge badge-success">actif</span>
               {% endif %}
             </div>
-            <form method="post" action="{{ url_for('main.toggle_ai_exercise', item_id=item.id) }}" class="inline-form-compact">
+            <form method="post" action="{{ url_for('exercise_bank.toggle_ai_exercise', item_id=item.id) }}" class="inline-form-compact">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
               <button class="btn btn-secondary btn-small" type="submit">
                 {% if item.is_disabled %}Réactiver{% else %}Désactiver{% endif %}
