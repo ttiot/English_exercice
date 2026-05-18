@@ -6,3 +6,4 @@ Flask-Limiter==3.9.0
 python-dotenv==1.0.1
 openai>=1.50.0,<2.0.0
 cryptography==41.0.7
+pytest>=8.0.0
