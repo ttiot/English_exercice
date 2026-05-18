@@ -189,7 +189,7 @@
             current_user.is_admin()) %}
             <form
                 method="post"
-                action="{{ url_for('main.toggle_exercise_correct', session_id=session_obj.id, exercise_id=exercise.id) }}"
+                action="{{ url_for('parents.toggle_exercise_correct', session_id=session_obj.id, exercise_id=exercise.id) }}"
                 style="margin-left: 0.5rem"
             >
                 <input
@@ -211,7 +211,7 @@
                 </button>
             </form>
             <a
-                href="{{ url_for('main.edit_exercise', session_id=session_obj.id, exercise_id=exercise.id) }}"
+                href="{{ url_for('parents.edit_exercise', session_id=session_obj.id, exercise_id=exercise.id) }}"
                 class="btn btn-small btn-secondary"
                 style="
                     font-size: 0.75rem;

@@ -9,7 +9,7 @@
     </p>
     {% if current_user %}
       <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Tableau de bord</a>
+        <a class="btn btn-secondary" href="{{ url_for('parents.parent_dashboard') }}">Tableau de bord</a>
         {% if current_user.is_parent() or current_user.is_admin() %}
           <a class="btn btn-primary" href="{{ url_for('students.create_student') }}">Ajouter un compte élève</a>
         {% else %}

@@ -5,7 +5,7 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
     <h2 style="margin:0;">Modifier l'exercice (banque)</h2>
-    <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises') }}">← Retour aux exercices</a>
+    <a class="btn btn-secondary" href="{{ url_for('parents.list_all_exercises') }}">← Retour aux exercices</a>
   </div>
 
   <form method="post">
@@ -75,7 +75,7 @@
 
     <div style="display:flex; gap:0.75rem; flex-wrap:wrap;">
       <button type="submit" class="btn btn-primary">Enregistrer</button>
-      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises') }}">Annuler</a>
+      <a class="btn btn-secondary" href="{{ url_for('parents.list_all_exercises') }}">Annuler</a>
     </div>
   </form>
 </div>

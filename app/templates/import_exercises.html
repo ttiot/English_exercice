@@ -7,7 +7,7 @@
         <h2>Importer des listes (CSV/Anki)</h2>
         <p class="muted">Ajoutez rapidement une série de questions depuis un fichier.</p>
       </div>
-      <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Retour</a>
+      <a class="btn btn-secondary" href="{{ url_for('parents.parent_dashboard') }}">Retour</a>
     </div>
     <form method="post" enctype="multipart/form-data">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

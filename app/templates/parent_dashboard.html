@@ -10,8 +10,8 @@
         <p class="muted">Visualisez la progression des élèves, gérez les catégories et programmez les prochains entraînements.</p>
       </div>
       <div class="card-actions">
-        <a class="btn btn-primary" href="{{ url_for('main.create_prepared_exercise') }}">Nouvel exercice préparé</a>
-        <a class="btn btn-secondary" href="{{ url_for('main.import_exercises') }}">Importer des listes</a>
+        <a class="btn btn-primary" href="{{ url_for('parents.create_prepared_exercise') }}">Nouvel exercice préparé</a>
+        <a class="btn btn-secondary" href="{{ url_for('parents.import_exercises') }}">Importer des listes</a>
         <a class="btn btn-secondary" href="{{ url_for('exercise_bank.exercise_bank') }}">Banque d'exercices</a>
       </div>
     </div>
@@ -44,9 +44,9 @@
                 <td><a href="{{ url_for('students.view_student', student_id=item.student.id) }}">Profil</a></td>
                 <td><a href="{{ url_for('students.manage_student', student_id=item.student.id) }}">Modifier</a></td>
                 <td class="nowrap">
-                  <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
+                  <a href="{{ url_for('parents.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
                   &nbsp;·&nbsp;
-                  <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='pdf') }}">PDF</a>
+                  <a href="{{ url_for('parents.export_quarter_report', student_id=item.student.id, format='pdf') }}">PDF</a>
                 </td>
               </tr>
             {% endfor %}
@@ -76,7 +76,7 @@
               {{ item.weekly_progress.accuracy }}% / {{ item.weekly_goal.target_accuracy if item.weekly_goal else 70 }}% précision &nbsp;·&nbsp;
               {{ item.weekly_progress.challenges }}/{{ item.weekly_goal.target_challenges if item.weekly_goal else 1 }} défis
             </p>
-            <form class="inline-form" method="post" action="{{ url_for('main.update_weekly_goal', student_id=item.student.id) }}">
+            <form class="inline-form" method="post" action="{{ url_for('parents.update_weekly_goal', student_id=item.student.id) }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
               <input name="target_sessions"  type="number" min="1"       value="{{ item.weekly_goal.target_sessions  if item.weekly_goal else 3  }}" title="Sessions" />
               <input name="target_minutes"   type="number" min="5"       value="{{ item.weekly_goal.target_minutes   if item.weekly_goal else 45 }}" title="Minutes" />
@@ -131,7 +131,7 @@
   {# ── Catégories de questions ── #}
   <div class="card">
     <h3>Catégories de questions</h3>
-    <form class="inline-form" method="post" action="{{ url_for('main.create_category') }}">
+    <form class="inline-form" method="post" action="{{ url_for('parents.create_category') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input name="name" placeholder="Nouvelle catégorie" required />
       <button class="btn btn-primary" type="submit">Ajouter</button>
@@ -144,12 +144,12 @@
             <span class="muted">code : {{ category.code }}</span>
             <details>
               <summary>Modifier</summary>
-              <form method="post" action="{{ url_for('main.rename_category', category_id=category.id) }}" class="inline-form">
+              <form method="post" action="{{ url_for('parents.rename_category', category_id=category.id) }}" class="inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <input name="name" value="{{ category.name }}" required />
                 <button class="btn btn-primary" type="submit">Renommer</button>
               </form>
-              <form method="post" action="{{ url_for('main.delete_category', category_id=category.id) }}" class="inline-form">
+              <form method="post" action="{{ url_for('parents.delete_category', category_id=category.id) }}" class="inline-form">
                 <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                 <button class="btn btn-danger" type="submit" onclick="return confirm('Supprimer cette catégorie ?');">Supprimer</button>
               </form>

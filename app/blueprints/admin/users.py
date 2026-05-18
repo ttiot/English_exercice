@@ -83,7 +83,7 @@ def update_user_role(user_id: int):
 
     if new_role not in {"student", "parent", "admin"}:
         flash("Type de compte invalide.", "danger")
-        return redirect(url_for("main.parent_dashboard"))
+        return redirect(url_for("parents.parent_dashboard"))
 
     current_user = _current_user()
     if current_user.id == target.id and new_role != "admin":
