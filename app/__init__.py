@@ -64,10 +64,8 @@ def create_app():
         ensure_schema_migrations,
     )
     from .blueprints import register_blueprints
-    from .routes import bp as main_bp
-    from .services.auth import _load_user_from_session
+    from .services.auth import _load_user_from_session, require_login
 
-    app.register_blueprint(main_bp)
     register_blueprints(app)
 
     # --- SQLite PRAGMA au connect (WAL, etc.) ---
@@ -129,6 +127,10 @@ def create_app():
     @app.before_request
     def load_current_user():
         g.current_user = _load_user_from_session()
+
+    # --- Garde globale d'authentification (redirige vers /login si non connecté) ---
+    # L'ordre importe : load_current_user pose g.current_user, require_login le lit.
+    app.before_request(require_login)
 
     @app.context_processor
     def inject_globals():
