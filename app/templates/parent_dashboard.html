@@ -41,8 +41,8 @@
                 <td>{{ item.total_sessions }}</td>
                 <td>{{ item.average_score }}%</td>
                 <td>{{ item.total_minutes }} min</td>
-                <td><a href="{{ url_for('main.view_student', student_id=item.student.id) }}">Profil</a></td>
-                <td><a href="{{ url_for('main.manage_student', student_id=item.student.id) }}">Modifier</a></td>
+                <td><a href="{{ url_for('students.view_student', student_id=item.student.id) }}">Profil</a></td>
+                <td><a href="{{ url_for('students.manage_student', student_id=item.student.id) }}">Modifier</a></td>
                 <td class="nowrap">
                   <a href="{{ url_for('main.export_quarter_report', student_id=item.student.id, format='csv') }}">CSV</a>
                   &nbsp;·&nbsp;

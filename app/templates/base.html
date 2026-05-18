@@ -29,9 +29,9 @@
           {% if current_user %}
             <span class="navbar-hello">Bonjour {{ current_user.full_name() | e }}</span>
             {% if current_user.is_parent() or current_user.is_admin() %}
-              <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
+              <a class="btn btn-primary" href="{{ url_for('students.create_student') }}">Créer un profil élève</a>
             {% else %}
-              <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=current_user.id) }}">Mon profil</a>
+              <a class="btn btn-secondary" href="{{ url_for('students.view_student', student_id=current_user.id) }}">Mon profil</a>
             {% endif %}
             <form class="inline-form inline-form-compact" method="post" action="{{ url_for('auth.logout') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

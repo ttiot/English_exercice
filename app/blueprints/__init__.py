@@ -10,6 +10,10 @@ from flask import Flask
 def register_blueprints(app: Flask) -> None:
     from .api import bp as api_bp
     from .auth import bp as auth_bp
+    from .sessions import bp as sessions_bp
+    from .students import bp as students_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(students_bp)
+    app.register_blueprint(sessions_bp)
     app.register_blueprint(api_bp)

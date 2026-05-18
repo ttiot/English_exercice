@@ -5,7 +5,7 @@
 <div class="card">
   <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:1rem; margin-bottom:1.5rem;">
     <h2 style="margin:0;">Générer des exercices IA pour {{ student.full_name() }}</h2>
-    <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">← Retour au profil</a>
+    <a class="btn btn-secondary" href="{{ url_for('students.view_student', student_id=student.id) }}">← Retour au profil</a>
   </div>
 
   <p class="muted">

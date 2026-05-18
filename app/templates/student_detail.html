@@ -11,7 +11,7 @@ endblock %} {% block content %} {% if resume_session %}
     >
     <a
         class="btn btn-warning"
-        href="{{ url_for('main.play_session', session_id=resume_session.id) }}"
+        href="{{ url_for('sessions.play_session', session_id=resume_session.id) }}"
         style="margin-left: auto"
         >▶ Reprendre</a
     >
@@ -90,23 +90,23 @@ endblock %} {% block content %} {% if resume_session %}
         <div class="student-actions" style="margin-top: 1rem">
             <a
                 class="btn btn-primary"
-                href="{{ url_for('main.start_session', student_id=student.id) }}"
+                href="{{ url_for('students.start_session', student_id=student.id) }}"
                 >⚡ Démarrer</a
             >
             <a
                 class="btn btn-secondary"
-                href="{{ url_for('main.start_session', student_id=student.id, mode='challenge_10') }}"
+                href="{{ url_for('students.start_session', student_id=student.id, mode='challenge_10') }}"
                 >🎯 Défi 10 min</a
             >
             <a
                 class="btn btn-secondary"
-                href="{{ url_for('main.start_session', student_id=student.id, mode='control') }}"
+                href="{{ url_for('students.start_session', student_id=student.id, mode='control') }}"
                 >📝 Contrôle</a
             >
             {% if can_manage %}
             <a
                 class="btn btn-secondary"
-                href="{{ url_for('main.manage_student', student_id=student.id) }}"
+                href="{{ url_for('students.manage_student', student_id=student.id) }}"
                 >⚙️ Profil</a
             >
             {% endif %}
@@ -183,7 +183,7 @@ endblock %} {% block content %} {% if resume_session %}
     </div>
     <a
         class="btn btn-primary"
-        href="{{ url_for('main.start_session', student_id=student.id, mode='prepared') }}"
+        href="{{ url_for('students.start_session', student_id=student.id, mode='prepared') }}"
         style="margin-left: auto"
         >Commencer</a
     >
@@ -306,7 +306,7 @@ endblock %} {% block content %} {% if resume_session %}
                 </td>
                 <td>
                     <a
-                        href="{{ url_for('main.session_summary', session_id=sess.id) }}"
+                        href="{{ url_for('sessions.session_summary', session_id=sess.id) }}"
                         >Correction</a
                     >
                 </td>
