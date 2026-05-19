@@ -688,70 +688,46 @@ def parent_generate_ai_exercises(student_id: int):
     _assert_student_access(_current_user(), student)
 
     if request.method == "POST":
-        from ...services.ai_generator import generate_exercises as ai_generate_exercises, get_openai_client, is_budget_exceeded
+        from ...services.session_builder import (
+            AIGenerationError,
+            generate_ai_exercises_for_student,
+            persist_ai_as_prepared_set,
+        )
 
-        student_prompt = sanitize_text_input(request.form.get("student_prompt", ""))
         difficulty = request.form.get("difficulty", "beginner").strip()
+        if difficulty not in DIFFICULTY_LEVELS:
+            difficulty = "beginner"
         try:
             question_count = int(request.form.get("question_count", 10))
             question_count = max(5, min(25, question_count))
         except (ValueError, TypeError):
             question_count = 10
 
-        if len(student_prompt) < 5:
-            flash("Le sujet doit contenir au moins 5 caractères.", "danger")
+        student_prompt_raw = sanitize_text_input(request.form.get("student_prompt", ""))
+
+        try:
+            prompt, ai_pairs = generate_ai_exercises_for_student(
+                student_prompt=student_prompt_raw,
+                difficulty=difficulty,
+                question_count=question_count,
+                student=student,
+            )
+        except AIGenerationError as exc:
+            flash(exc.message, exc.severity)
             return render_template(
                 "parent_ai_generate.html",
                 student=student,
                 difficulty_labels=_display_constants()[1],
-                form_data={"student_prompt": student_prompt, "difficulty": difficulty, "question_count": question_count},
+                form_data={
+                    "student_prompt": student_prompt_raw,
+                    "difficulty": difficulty,
+                    "question_count": question_count,
+                },
             )
 
-        if difficulty not in DIFFICULTY_LEVELS:
-            difficulty = "beginner"
-
-        client, client_info = get_openai_client()
-        if client is None:
-            flash("La génération IA n'est pas disponible (aucune clé API configurée).", "warning")
-            return redirect(url_for("students.view_student", student_id=student_id))
-
-        if is_budget_exceeded():
-            flash("Le budget mensuel de génération IA est atteint.", "warning")
-            return redirect(url_for("students.view_student", student_id=student_id))
-
-        results = ai_generate_exercises(student_prompt, question_count, difficulty, student_id)
-
-        if not results:
-            flash("La génération n'a produit aucun exercice. Reformule le sujet et réessaie.", "danger")
-            return render_template(
-                "parent_ai_generate.html",
-                student=student,
-                difficulty_labels=_display_constants()[1],
-                form_data={"student_prompt": student_prompt, "difficulty": difficulty, "question_count": question_count},
-            )
-
-        safe_prompt = student_prompt[:50]
-        exercise_set = PreparedExerciseSet(
-            title=f"IA : {safe_prompt}",
-            student_id=student.id,
-        )
-        db.session.add(exercise_set)
-        db.session.flush()
-
-        for idx, (ep, _pool_row) in enumerate(results):
-            q = PreparedExerciseQuestion(
-                exercise_set_id=exercise_set.id,
-                prompt=ep.prompt,
-                answer=ep.answer,
-                category_code=ep.category,
-                position=idx,
-            )
-            db.session.add(q)
-
-        db.session.commit()
-
+        persist_ai_as_prepared_set(student=student, prompt=prompt, ai_pairs=ai_pairs)
         flash(
-            f"{len(results)} exercice(s) générés et assignés à {student.full_name()}. "
+            f"{len(ai_pairs)} exercice(s) générés et assignés à {student.full_name()}. "
             "Ils seront proposés lors de sa prochaine session.",
             "success",
         )

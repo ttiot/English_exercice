@@ -381,76 +381,30 @@ def start_session(student_id: int):
 
         # Mode IA : on bypasse les parcours préparés / procéduraux.
         if session_type == "ai_custom":
-            from ...services.ai_generator import (
-                generate_exercises as ai_generate_exercises,
-                get_openai_client,
-                is_budget_exceeded,
+            from ...services.session_builder import (
+                AIGenerationError,
+                generate_ai_exercises_for_student,
+                persist_ai_as_practice_session,
             )
 
-            student_prompt = sanitize_text_input(request.form.get("student_prompt", ""))
-            if not student_prompt or len(student_prompt) < 5:
-                flash(
-                    "Décris en quelques mots le sujet sur lequel tu veux travailler "
-                    "(au moins 5 caractères).",
-                    "warning",
+            try:
+                prompt, ai_pairs = generate_ai_exercises_for_student(
+                    student_prompt=request.form.get("student_prompt", ""),
+                    difficulty=difficulty_value,
+                    question_count=question_count,
+                    student=student,
                 )
-                return redirect(url_for("students.start_session", student_id=student.id))
-            if len(student_prompt) > 500:
-                student_prompt = student_prompt[:500]
-
-            client, _ = get_openai_client()
-            if not client:
-                flash(
-                    "OpenAI n'est pas configuré. Demande à l'administrateur "
-                    "d'activer le service IA.",
-                    "danger",
-                )
-                return redirect(url_for("students.start_session", student_id=student.id))
-            if is_budget_exceeded():
-                flash(
-                    "Le budget mensuel IA est atteint. Réessaie le mois prochain "
-                    "ou demande à l'administrateur d'augmenter le plafond.",
-                    "warning",
-                )
+            except AIGenerationError as exc:
+                flash(exc.message, exc.severity)
                 return redirect(url_for("students.start_session", student_id=student.id))
 
-            ai_pairs = ai_generate_exercises(
-                student_prompt=student_prompt,
-                count=question_count,
+            session_obj = persist_ai_as_practice_session(
+                student=student,
+                prompt=prompt,
+                ai_pairs=ai_pairs,
                 difficulty=difficulty_value,
-                student_id=student.id,
+                time_limit_value=time_limit_value,
             )
-            if not ai_pairs:
-                flash(
-                    "Désolé, l'IA n'a pas pu générer d'exercices pour ce thème. "
-                    "Reformule ou réessaie plus tard.",
-                    "danger",
-                )
-                return redirect(url_for("students.start_session", student_id=student.id))
-
-            session_obj = PracticeSession(
-                student_id=student.id,
-                time_limit_minutes=time_limit_value,
-                time_limit_seconds=(time_limit_value * 60) if time_limit_value else None,
-                total_questions=len(ai_pairs),
-                difficulty=difficulty_value,
-                session_type="ai_custom",
-                instructions_fr=student_prompt,
-            )
-            db.session.add(session_obj)
-            db.session.flush()
-            for index, (exercise, pool_row) in enumerate(ai_pairs):
-                db.session.add(
-                    SessionExercise(
-                        session_id=session_obj.id,
-                        display_order=index,
-                        **_session_exercise_kwargs(
-                            exercise, source="ai", ai_exercise_id=pool_row.id
-                        ),
-                    )
-                )
-                pool_row.times_used = (pool_row.times_used or 0) + 1
-            db.session.commit()
             return redirect(url_for("sessions.play_session", session_id=session_obj.id))
 
         session_obj = PracticeSession(
