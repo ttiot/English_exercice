@@ -385,31 +385,21 @@ def create_prepared_exercise():
             if student_obj and student_obj.role != "student":
                 student_obj = None
 
-        exercise_set = PreparedExerciseSet(
+        from ...services.imports import persist_prepared_set
+
+        rows = [
+            {"prompt": prompt_clean, "answer": answer_clean, "category": category_code}
+            for prompt_clean, answer_clean, category_code in questions_payload
+        ]
+        persist_prepared_set(
             title=title,
             student=student_obj,
-            use_time_limit=use_time_limit,
-            time_limit_seconds=total_seconds if use_time_limit else None,
+            rows=rows,
             instructions_fr=instructions_fr,
             instructions_en=instructions_en,
+            use_time_limit=use_time_limit,
+            time_limit_seconds=total_seconds,
         )
-        db.session.add(exercise_set)
-        db.session.flush()
-
-        for index, (prompt_clean, answer_clean, category_code) in enumerate(
-            questions_payload
-        ):
-            db.session.add(
-                PreparedExerciseQuestion(
-                    exercise_set_id=exercise_set.id,
-                    prompt=prompt_clean,
-                    answer=answer_clean,
-                    category_code=category_code,
-                    position=index,
-                )
-            )
-
-        db.session.commit()
 
         flash("Exercice préparé enregistré.", "success")
         return redirect(url_for("parents.parent_dashboard"))
@@ -459,36 +449,19 @@ def import_exercises():
             if student_obj and student_obj.role != "student":
                 student_obj = None
 
-        exercise_set = PreparedExerciseSet(
+        from ...services.imports import persist_prepared_set
+
+        _exercise_set, warnings = persist_prepared_set(
             title=title,
             student=student_obj,
+            rows=rows,
             instructions_fr=instructions_fr,
             instructions_en=instructions_en,
+            valid_category_codes=category_codes,
+            validate_each_row=True,
         )
-        db.session.add(exercise_set)
-        db.session.flush()
-
-        for index, row in enumerate(rows):
-            prompt = sanitize_text_input(row["prompt"])
-            answer = sanitize_text_input(row["answer"])
-            category_code = row.get("category", "custom").strip() or "custom"
-            if category_code not in category_codes:
-                category_code = "custom"
-            content_valid, content_message = validate_question_content(prompt, answer)
-            if not content_valid:
-                flash(f"Question ignorée : {content_message}", "warning")
-                continue
-            db.session.add(
-                PreparedExerciseQuestion(
-                    exercise_set_id=exercise_set.id,
-                    prompt=prompt,
-                    answer=answer,
-                    category_code=category_code,
-                    position=index,
-                )
-            )
-
-        db.session.commit()
+        for warning in warnings:
+            flash(warning, "warning")
         flash("Import terminé : questions ajoutées.", "success")
         return redirect(url_for("parents.parent_dashboard"))
 
@@ -1027,6 +1000,8 @@ def edit_exercise_item(item_id: int):
 @bp.route("/exercises/bulk-edit", methods=["POST"])
 @_parent_required
 def bulk_edit_exercises():
+    from ...services.imports import apply_bulk_change, parse_batch_selection
+
     bulk_field = (request.form.get("bulk_field") or "").strip()
     bulk_value = (request.form.get("bulk_value") or "").strip()
 
@@ -1034,8 +1009,7 @@ def bulk_edit_exercises():
         flash("Champ de modification invalide.", "danger")
         return redirect(url_for("parents.list_all_exercises"))
 
-    all_categories = QuestionCategory.query.all()
-    valid_cat_codes = {c.code for c in all_categories}
+    valid_cat_codes = {c.code for c in QuestionCategory.query.all()}
     valid_diffs = set(DIFFICULTY_LEVELS) | {"any"}
 
     if bulk_field == "category" and bulk_value not in valid_cat_codes:
@@ -1045,51 +1019,19 @@ def bulk_edit_exercises():
         flash("Niveau de difficulté invalide.", "danger")
         return redirect(url_for("parents.list_all_exercises"))
 
-    items_to_edit = []
-    i = 0
-    while True:
-        item_type = request.form.get(f"item_{i}_type")
-        item_id_raw = request.form.get(f"item_{i}_id")
-        if item_type is None and item_id_raw is None:
-            break
-        try:
-            items_to_edit.append((item_type, int(item_id_raw)))
-        except (TypeError, ValueError):
-            pass
-        i += 1
+    items_to_edit = parse_batch_selection(request.form)
 
     if not items_to_edit:
         flash("Aucun exercice sélectionné.", "warning")
         return redirect(url_for("parents.list_all_exercises", **_preserve_filters(request.form)))
 
-    cat_by_code = {c.code: c for c in all_categories}
-    updated = 0
-    for item_type, item_id in items_to_edit:
-        if item_type == "session":
-            if bulk_field == "category":
-                ex = SessionExercise.query.get(item_id)
-                if ex:
-                    ex.category = bulk_value
-                    updated += 1
-        elif item_type == "prepared":
-            if bulk_field == "category":
-                ex = PreparedExerciseQuestion.query.get(item_id)
-                if ex:
-                    ex.category_code = bulk_value
-                    updated += 1
-        elif item_type == "bank":
-            ex = ExerciseItem.query.get(item_id)
-            if ex:
-                if bulk_field == "category":
-                    cat = cat_by_code.get(bulk_value)
-                    if cat:
-                        ex.category_id = cat.id
-                        updated += 1
-                elif bulk_field == "difficulty":
-                    ex.difficulty = bulk_value
-                    updated += 1
+    updated = apply_bulk_change(
+        items_to_edit,
+        bulk_field,
+        bulk_value,
+        valid_category_codes=valid_cat_codes if bulk_field == "category" else None,
+    )
 
-    db.session.commit()
     flash(f"{updated} exercice(s) modifié(s).", "success")
     return redirect(url_for("parents.list_all_exercises", **_preserve_filters(request.form)))
 
@@ -1104,26 +1046,12 @@ def toggle_exercise_item_active(item_id: int):
     return redirect(url_for("parents.list_all_exercises"))
 
 
-def _parse_selected_items(form) -> List[Tuple[str, int]]:
-    items = []
-    i = 0
-    while True:
-        item_type = form.get(f"item_{i}_type")
-        item_id_raw = form.get(f"item_{i}_id")
-        if item_type is None and item_id_raw is None:
-            break
-        try:
-            items.append((item_type, int(item_id_raw)))
-        except (TypeError, ValueError):
-            pass
-        i += 1
-    return items
-
-
 @bp.route("/exercises/batch-edit", methods=["POST"])
 @_parent_required
 def batch_edit_exercises():
-    items_raw = _parse_selected_items(request.form)
+    from ...services.imports import parse_batch_selection
+
+    items_raw = parse_batch_selection(request.form)
 
     if not items_raw:
         flash("Aucun exercice sélectionné.", "warning")
