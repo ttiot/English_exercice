@@ -26,7 +26,10 @@ from ..models import SessionExercise
 
 _ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+")
 # Déterminants français (articles définis, indéfinis, partitifs) — du plus long au plus court.
-_FR_DET_RE = re.compile(r"^(?:de\s+l[''`]|de\s+la|du|des|le|la|les|l[''`]|un|une)\s+", re.IGNORECASE)
+_FR_DET_RE = re.compile(
+    r"^(?:de\s+l[''`']\s*|de\s+la\s+|d[''`']\s*|du\s+|des\s+|les\s+|le\s+|la\s+|l[''`']\s*|une\s+|un\s+)",
+    re.IGNORECASE,
+)
 
 # Formes contractées → développées (toutes en minuscules, apostrophe droite)
 _CONTRACTIONS: dict = {
@@ -67,6 +70,17 @@ _CONTRACTIONS: dict = {
     "she'll": "she will",
     "we'll": "we will",
     "they'll": "they will",
+    # Modaux négatifs
+    "shouldn't": "should not",
+    "mustn't": "must not",
+    "mightn't": "might not",
+    "needn't": "need not",
+    # Pronoms / mots interrogatifs
+    "that's": "that is",
+    "who's": "who is",
+    "what's": "what is",
+    "where's": "where is",
+    "let's": "let us",
 }
 # Index inverse : forme développée → contractée
 _EXPANSIONS: dict = {v: k for k, v in _CONTRACTIONS.items()}
@@ -279,7 +293,12 @@ def _check_answer_status(exercise: SessionExercise) -> Tuple[str, Optional[str]]
                     if best_dist is None or d < best_dist:
                         best_dist = d
                         best_candidate = answer
-        if best_dist == 1:
+        _near_miss_threshold = (
+            2 if len(_normalize_answer(best_candidate or "", loose=False)) > 8
+            else 1 if len(_normalize_answer(best_candidate or "", loose=False)) > 4
+            else 0
+        )
+        if best_dist is not None and 0 < best_dist <= _near_miss_threshold:
             return "near_miss", best_candidate
 
     return "incorrect", candidates[0] if candidates else None
