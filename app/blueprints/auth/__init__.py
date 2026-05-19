@@ -6,14 +6,10 @@ Pas d'``url_prefix`` : les routes restent à la racine (``/``, ``/login``,
 """
 
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import Optional
-from uuid import uuid4
 
 from flask import (
     Blueprint,
-    Response,
-    current_app,
     flash,
     redirect,
     render_template,
@@ -21,7 +17,6 @@ from flask import (
     session,
     url_for,
 )
-from werkzeug.utils import secure_filename
 
 from ...extensions import db, limiter
 from ...models import EmailConfig, PracticeSession, Student
@@ -32,26 +27,15 @@ from ...services.auth import (
     _logout_user,
     is_safe_url,
 )
+from ...services.user_form_handler import UserFormError, create_user_from_form
 from ...validators import (
     sanitize_text_input,
-    validate_age,
     validate_email,
-    validate_goals,
-    validate_name,
     validate_password,
 )
 
 
 bp = Blueprint("auth", __name__)
-
-
-# Import différé : validate_image_file vit encore dans routes.py tant que ce
-# blueprint n'a pas son propre helper d'upload. On l'importe à la volée pour
-# éviter un cycle ``routes -> blueprints.auth -> routes``.
-def _validate_image_file(file):
-    from ...routes import validate_image_file
-
-    return validate_image_file(file)
 
 
 # Les libellés de difficulté restent dans routes.py (utilisés par d'autres
@@ -108,80 +92,16 @@ def register():
         return redirect(url_for("auth.index"))
 
     if request.method == "POST":
-        first_name = sanitize_text_input(request.form.get("first_name", ""))
-        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
-        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
-        password = request.form.get("password", "")
-        password_confirm = request.form.get("password_confirm", "")
-        age_raw = request.form.get("age", "").strip()
-        goals = sanitize_text_input(request.form.get("goals", "")) or None
-
-        # Validation stricte du prénom
-        if not validate_name(first_name):
-            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
+        try:
+            student = create_user_from_form(
+                request.form,
+                request.files,
+                role_choice_allowed=False,
+                default_role="student",
+            )
+        except UserFormError as exc:
+            flash(exc.message, "danger")
             return redirect(url_for("auth.register"))
-
-        # Validation stricte du nom de famille
-        if last_name and not validate_name(last_name):
-            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
-            return redirect(url_for("auth.register"))
-
-        # Validation stricte de l'email
-        if not validate_email(email_raw):
-            flash("L'adresse e-mail n'est pas valide.", "danger")
-            return redirect(url_for("auth.register"))
-
-        if Student.query.filter_by(email=email_raw).first():
-            flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return redirect(url_for("auth.register"))
-
-        # Validation stricte du mot de passe
-        password_valid, password_message = validate_password(password)
-        if not password_valid:
-            flash(password_message, "danger")
-            return redirect(url_for("auth.register"))
-
-        if password != password_confirm:
-            flash("La confirmation du mot de passe ne correspond pas.", "danger")
-            return redirect(url_for("auth.register"))
-
-        # Validation stricte de l'âge
-        age_value = validate_age(age_raw)
-        if age_raw and age_value is None:
-            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
-            return redirect(url_for("auth.register"))
-
-        # Validation stricte des objectifs
-        if goals and not validate_goals(goals):
-            flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return redirect(url_for("auth.register"))
-
-        avatar_file = request.files.get("avatar")
-        avatar_filename: Optional[str] = None
-        if avatar_file and avatar_file.filename:
-            if not _validate_image_file(avatar_file):
-                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return redirect(url_for("auth.register"))
-
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            avatar_filename = f"{uuid4().hex}.{extension}"
-            destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
-            avatar_file.save(destination)
-
-        student = Student(
-            first_name=first_name,
-            last_name=last_name,
-            email=email_raw,
-            age=age_value,
-            goals=goals,
-            role="student",
-            avatar_filename=avatar_filename,
-        )
-        student.set_password(password)
-
-        db.session.add(student)
-        db.session.commit()
 
         _login_user(student)
         flash("Bienvenue ! Ton compte élève a été créé.", "success")

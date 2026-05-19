@@ -6,20 +6,16 @@ Préfixe : ``/students``.
 """
 
 from datetime import date, datetime, timedelta
-from pathlib import Path
-from typing import Dict, List, Optional
-from uuid import uuid4
+from typing import List
 
 from flask import (
     Blueprint,
-    current_app,
     flash,
     redirect,
     render_template,
     request,
     url_for,
 )
-from werkzeug.utils import secure_filename
 
 from ...exercise_factory import (
     AVAILABLE_CATEGORIES,
@@ -59,7 +55,6 @@ from ...services.curriculum import (
     _domain_list,
     _is_category_unlocked,
     _load_progress_map,
-    _parse_domain_list,
     _recommend_difficulty,
 )
 from ...services.gamification import (
@@ -71,29 +66,16 @@ from ...services.gamification import (
     _get_weekly_goal,
     _review_interval_days,
 )
-from ...validators import (
-    sanitize_text_input,
-    validate_age,
-    validate_email,
-    validate_goals,
-    validate_name,
-    validate_password,
+from ...services.user_form_handler import (
+    UserFormError,
+    change_user_password,
+    create_user_from_form,
+    update_user_from_form,
 )
+from ...validators import sanitize_text_input
 
 
 bp = Blueprint("students", __name__, url_prefix="/students")
-
-
-def _validate_image_file(file):
-    from ...routes import validate_image_file
-
-    return validate_image_file(file)
-
-
-def _delete_avatar_file(filename):
-    from ...routes import _delete_avatar_file as impl
-
-    return impl(filename)
 
 
 def _constants():
@@ -121,7 +103,7 @@ def _constants():
 def create_student():
     consts = _constants()
 
-    def _render_with_form_data(form_data: Dict[str, str], selected_domains: List[str]):
+    def _render(form_data, selected_domains):
         return render_template(
             "student_form.html",
             form_data=form_data,
@@ -133,114 +115,19 @@ def create_student():
         )
 
     if request.method == "POST":
-        first_name = sanitize_text_input(request.form.get("first_name", ""))
-        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
-        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
-        age_raw = request.form.get("age", "").strip()
-        goals = sanitize_text_input(request.form.get("goals", "")) or None
-        target_cefr_level = request.form.get("target_cefr_level") or None
-        target_grade = request.form.get("target_grade") or None
-        target_trimester_raw = request.form.get("target_trimester") or ""
-        interests = sanitize_text_input(request.form.get("interests", "")) or None
-        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
-        password = request.form.get("password", "")
-        password_confirm = request.form.get("password_confirm", "")
-        form_data = {
-            "first_name": first_name,
-            "last_name": last_name or "",
-            "email": email_raw,
-            "age": age_raw,
-            "goals": goals or "",
-            "target_cefr_level": target_cefr_level or "",
-            "target_grade": target_grade or "",
-            "target_trimester": target_trimester_raw or "",
-            "interests": interests or "",
-        }
-        selected_domains = request.form.getlist("preferred_domains")
-
-        if not validate_name(first_name):
-            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if last_name and not validate_name(last_name):
-            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if not validate_email(email_raw):
-            flash("L'adresse e-mail n'est pas valide.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if Student.query.filter_by(email=email_raw).first():
-            flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        password_valid, password_message = validate_password(password)
-        if not password_valid:
-            flash(password_message, "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if password != password_confirm:
-            flash("La confirmation du mot de passe ne correspond pas.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        age_value = validate_age(age_raw)
-        if age_raw and age_value is None:
-            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if goals and not validate_goals(goals):
-            flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if target_cefr_level and target_cefr_level not in consts["cefr_levels"]:
-            flash("Le niveau CECRL est invalide.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        if target_grade and target_grade not in consts["grade_levels"]:
-            flash("Le niveau scolaire est invalide.", "danger")
-            return _render_with_form_data(form_data, selected_domains)
-
-        target_trimester = None
-        if target_trimester_raw:
-            try:
-                target_trimester = int(target_trimester_raw)
-            except ValueError:
-                flash("Le trimestre est invalide.", "danger")
-                return _render_with_form_data(form_data, selected_domains)
-            if target_trimester not in consts["trimester_choices"]:
-                flash("Le trimestre est invalide.", "danger")
-                return _render_with_form_data(form_data, selected_domains)
-
-        avatar_file = request.files.get("avatar")
-        avatar_filename: Optional[str] = None
-        if avatar_file and avatar_file.filename:
-            if not _validate_image_file(avatar_file):
-                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return _render_with_form_data(form_data, selected_domains)
-
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            avatar_filename = f"{uuid4().hex}.{extension}"
-            destination = Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename
-            avatar_file.save(destination)
-
-        student = Student(
-            first_name=first_name,
-            last_name=last_name,
-            email=email_raw,
-            age=age_value,
-            goals=goals,
-            target_cefr_level=target_cefr_level,
-            target_grade=target_grade,
-            target_trimester=target_trimester,
-            interests=interests,
-            preferred_domains=preferred_domains or None,
-            avatar_filename=avatar_filename,
-            role="student",
-        )
-        student.set_password(password)
-        db.session.add(student)
-        db.session.commit()
+        try:
+            student = create_user_from_form(
+                request.form,
+                request.files,
+                role_choice_allowed=False,
+                default_role="student",
+                cefr_levels=consts["cefr_levels"],
+                grade_levels=consts["grade_levels"],
+                trimester_choices=consts["trimester_choices"],
+            )
+        except UserFormError as exc:
+            flash(exc.message, "danger")
+            return _render(exc.form_data, exc.selected_domains)
 
         creator = _current_user()
         if creator and creator.is_parent():
@@ -250,15 +137,7 @@ def create_student():
         flash("Profil élève créé avec succès !", "success")
         return redirect(url_for("students.view_student", student_id=student.id))
 
-    return render_template(
-        "student_form.html",
-        form_data={},
-        selected_domains=[],
-        cefr_levels=consts["cefr_levels"],
-        grade_levels=consts["grade_levels"],
-        trimester_choices=consts["trimester_choices"],
-        domain_choices=DOMAIN_CHOICES,
-    )
+    return _render({}, [])
 
 
 @bp.route("/<int:student_id>")
@@ -411,123 +290,36 @@ def manage_student(student_id: int):
 
     if request.method == "POST":
         action = request.form.get("action", "profile")
+        settings_url = url_for("students.manage_student", student_id=student.id)
 
         if action == "password":
-            current_password = request.form.get("current_password", "").strip()
-            new_password = request.form.get("new_password", "").strip()
-            confirm_password = request.form.get("confirm_password", "").strip()
-
-            if len(new_password) < 8:
-                flash(
-                    "Le nouveau mot de passe doit contenir au moins 8 caractères.",
-                    "danger",
-                )
-                return redirect(url_for("students.manage_student", student_id=student.id))
-
-            if new_password != confirm_password:
-                flash("La confirmation du mot de passe ne correspond pas.", "danger")
-                return redirect(url_for("students.manage_student", student_id=student.id))
-
-            if not parent_ok and not student.check_password(current_password):
-                flash("L'ancien mot de passe est incorrect.", "danger")
-                return redirect(url_for("students.manage_student", student_id=student.id))
-
-            student.set_password(new_password)
-            db.session.commit()
+            try:
+                change_user_password(student, request.form, parent_ok=parent_ok)
+            except UserFormError as exc:
+                flash(exc.message, "danger")
+                return redirect(settings_url)
             flash("Mot de passe mis à jour avec succès.", "success")
-            return redirect(url_for("students.manage_student", student_id=student.id))
+            return redirect(settings_url)
 
         # Default to profile update
-        first_name = sanitize_text_input(request.form.get("first_name", ""))
-        last_name = sanitize_text_input(request.form.get("last_name", ""))
-        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
-        goals = sanitize_text_input(request.form.get("goals", ""))
-        age_raw = request.form.get("age", "").strip()
-        target_cefr_level = request.form.get("target_cefr_level") or None
-        target_grade = request.form.get("target_grade") or None
-        target_trimester_raw = request.form.get("target_trimester") or ""
-        interests = sanitize_text_input(request.form.get("interests", "")) or None
-        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
-        remove_avatar = request.form.get("remove_avatar") == "on"
-
-        if not first_name:
-            flash("Le prénom est obligatoire.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
-        if not email_raw:
-            flash("L'adresse e-mail est obligatoire.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
-        existing_email = Student.query.filter_by(email=email_raw).first()
-        if existing_email and existing_email.id != student.id:
-            flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
         try:
-            age_value = int(age_raw) if age_raw else None
-        except ValueError:
-            flash("L'âge doit être un nombre.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
+            update_user_from_form(
+                student,
+                request.form,
+                request.files,
+                role_choice_allowed=False,
+                current_user=user,
+                cefr_levels=consts["cefr_levels"],
+                grade_levels=consts["grade_levels"],
+                trimester_choices=consts["trimester_choices"],
+                skip_validate_name=True,
+            )
+        except UserFormError as exc:
+            flash(exc.message, "danger")
+            return redirect(settings_url)
 
-        if goals and not validate_goals(goals):
-            flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
-        if target_cefr_level and target_cefr_level not in consts["cefr_levels"]:
-            flash("Le niveau CECRL est invalide.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
-        if target_grade and target_grade not in consts["grade_levels"]:
-            flash("Le niveau scolaire est invalide.", "danger")
-            return redirect(url_for("students.manage_student", student_id=student.id))
-
-        target_trimester = None
-        if target_trimester_raw:
-            try:
-                target_trimester = int(target_trimester_raw)
-            except ValueError:
-                flash("Le trimestre est invalide.", "danger")
-                return redirect(url_for("students.manage_student", student_id=student.id))
-            if target_trimester not in consts["trimester_choices"]:
-                flash("Le trimestre est invalide.", "danger")
-                return redirect(url_for("students.manage_student", student_id=student.id))
-
-        avatar_file = request.files.get("avatar")
-        new_avatar_filename: Optional[str] = None
-        if avatar_file and avatar_file.filename:
-            if not _validate_image_file(avatar_file):
-                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return redirect(url_for("students.manage_student", student_id=student.id))
-
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            new_avatar_filename = f"{uuid4().hex}.{extension}"
-            destination = Path(current_app.config["UPLOAD_FOLDER"]) / new_avatar_filename
-            avatar_file.save(destination)
-
-        if remove_avatar and student.avatar_filename:
-            _delete_avatar_file(student.avatar_filename)
-            student.avatar_filename = None
-
-        if new_avatar_filename:
-            if student.avatar_filename and student.avatar_filename != new_avatar_filename:
-                _delete_avatar_file(student.avatar_filename)
-            student.avatar_filename = new_avatar_filename
-
-        student.first_name = first_name
-        student.last_name = last_name or None
-        student.email = email_raw
-        student.goals = goals or None
-        student.age = age_value
-        student.target_cefr_level = target_cefr_level
-        student.target_grade = target_grade
-        student.target_trimester = target_trimester
-        student.interests = interests
-        student.preferred_domains = preferred_domains or None
-
-        db.session.commit()
         flash("Profil mis à jour.", "success")
-        return redirect(url_for("students.manage_student", student_id=student.id))
+        return redirect(settings_url)
 
     return render_template(
         "student_settings.html",

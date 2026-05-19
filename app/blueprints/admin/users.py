@@ -1,12 +1,7 @@
 """Routes ``/admin/users/*`` : gestion des comptes (rôles, impersonation, CRUD).
 """
 
-from pathlib import Path
-from typing import Optional
-from uuid import uuid4
-
 from flask import (
-    current_app,
     flash,
     g,
     redirect,
@@ -15,7 +10,6 @@ from flask import (
     session,
     url_for,
 )
-from werkzeug.utils import secure_filename
 
 from ...extensions import db
 from ...models import (
@@ -33,18 +27,11 @@ from ...services.auth import (
     _current_user,
     _get_student_or_404,
 )
-from ...services.curriculum import (
-    DOMAIN_CHOICES,
-    _domain_list,
-    _parse_domain_list,
-)
-from ...validators import (
-    sanitize_text_input,
-    validate_age,
-    validate_email,
-    validate_goals,
-    validate_name,
-    validate_password,
+from ...services.curriculum import DOMAIN_CHOICES, _domain_list
+from ...services.user_form_handler import (
+    UserFormError,
+    create_user_from_form,
+    update_user_from_form,
 )
 from . import bp
 
@@ -53,12 +40,6 @@ def _constants():
     from ...routes import CEFR_LEVELS, GRADE_LEVELS, TRIMESTER_CHOICES
 
     return CEFR_LEVELS, GRADE_LEVELS, TRIMESTER_CHOICES
-
-
-def _validate_image_file(file):
-    from ...routes import validate_image_file
-
-    return validate_image_file(file)
 
 
 def _delete_avatar_file(filename):
@@ -168,127 +149,19 @@ def admin_create_user():
         )
 
     if request.method == "POST":
-        first_name = sanitize_text_input(request.form.get("first_name", ""))
-        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
-        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
-        age_raw = request.form.get("age", "").strip()
-        goals = sanitize_text_input(request.form.get("goals", "")) or None
-        target_cefr_level = request.form.get("target_cefr_level") or None
-        target_grade = request.form.get("target_grade") or None
-        target_trimester_raw = request.form.get("target_trimester") or ""
-        interests = sanitize_text_input(request.form.get("interests", "")) or None
-        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
-        role = request.form.get("role", "student").strip()
-        password = request.form.get("password", "")
-        password_confirm = request.form.get("password_confirm", "")
-        form_data = {
-            "first_name": first_name,
-            "last_name": last_name or "",
-            "email": email_raw,
-            "age": age_raw,
-            "goals": goals or "",
-            "target_cefr_level": target_cefr_level or "",
-            "target_grade": target_grade or "",
-            "target_trimester": target_trimester_raw or "",
-            "interests": interests or "",
-            "role": role,
-        }
-        selected_domains = request.form.getlist("preferred_domains")
-
-        if role not in {"student", "parent", "admin"}:
-            flash("Rôle invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if role != "student":
-            age_raw = ""
-            goals = None
-            target_cefr_level = None
-            target_grade = None
-            target_trimester_raw = ""
-            interests = None
-            preferred_domains = None
-
-        if not validate_name(first_name):
-            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
-            return _render(form_data, selected_domains)
-
-        if last_name and not validate_name(last_name):
-            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
-            return _render(form_data, selected_domains)
-
-        if not validate_email(email_raw):
-            flash("L'adresse e-mail n'est pas valide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if Student.query.filter_by(email=email_raw).first():
-            flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return _render(form_data, selected_domains)
-
-        password_valid, password_message = validate_password(password)
-        if not password_valid:
-            flash(password_message, "danger")
-            return _render(form_data, selected_domains)
-
-        if password != password_confirm:
-            flash("La confirmation du mot de passe ne correspond pas.", "danger")
-            return _render(form_data, selected_domains)
-
-        age_value = validate_age(age_raw)
-        if age_raw and age_value is None:
-            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
-            return _render(form_data, selected_domains)
-
-        if goals and not validate_goals(goals):
-            flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if target_cefr_level and target_cefr_level not in cefr_levels:
-            flash("Le niveau CECRL est invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if target_grade and target_grade not in grade_levels:
-            flash("Le niveau scolaire est invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        target_trimester = None
-        if target_trimester_raw:
-            try:
-                target_trimester = int(target_trimester_raw)
-            except ValueError:
-                flash("Le trimestre est invalide.", "danger")
-                return _render(form_data, selected_domains)
-            if target_trimester not in trimester_choices:
-                flash("Le trimestre est invalide.", "danger")
-                return _render(form_data, selected_domains)
-
-        avatar_file = request.files.get("avatar")
-        avatar_filename: Optional[str] = None
-        if avatar_file and avatar_file.filename:
-            if not _validate_image_file(avatar_file):
-                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return _render(form_data, selected_domains)
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            avatar_filename = f"{uuid4().hex}.{extension}"
-            avatar_file.save(Path(current_app.config["UPLOAD_FOLDER"]) / avatar_filename)
-
-        new_user = Student(
-            first_name=first_name,
-            last_name=last_name,
-            email=email_raw,
-            age=age_value,
-            goals=goals,
-            target_cefr_level=target_cefr_level,
-            target_grade=target_grade,
-            target_trimester=target_trimester,
-            interests=interests,
-            preferred_domains=preferred_domains or None,
-            avatar_filename=avatar_filename,
-            role=role,
-        )
-        new_user.set_password(password)
-        db.session.add(new_user)
-        db.session.commit()
+        try:
+            new_user = create_user_from_form(
+                request.form,
+                request.files,
+                role_choice_allowed=True,
+                default_role="student",
+                cefr_levels=cefr_levels,
+                grade_levels=grade_levels,
+                trimester_choices=trimester_choices,
+            )
+        except UserFormError as exc:
+            flash(exc.message, "danger")
+            return _render(exc.form_data, exc.selected_domains)
         flash(f"Compte « {new_user.full_name()} » créé.", "success")
         return redirect(url_for("admin.admin_users"))
 
@@ -314,142 +187,21 @@ def admin_edit_user(user_id: int):
         )
 
     if request.method == "POST":
-        first_name = sanitize_text_input(request.form.get("first_name", ""))
-        last_name = sanitize_text_input(request.form.get("last_name", "")) or None
-        email_raw = sanitize_text_input(request.form.get("email", "")).lower()
-        age_raw = request.form.get("age", "").strip()
-        goals = sanitize_text_input(request.form.get("goals", "")) or None
-        target_cefr_level = request.form.get("target_cefr_level") or None
-        target_grade = request.form.get("target_grade") or None
-        target_trimester_raw = request.form.get("target_trimester") or ""
-        interests = sanitize_text_input(request.form.get("interests", "")) or None
-        preferred_domains = _parse_domain_list(request.form.getlist("preferred_domains"))
-        role = request.form.get("role", target.role).strip()
-        password = request.form.get("password", "").strip()
-        password_confirm = request.form.get("password_confirm", "").strip()
-        remove_avatar = request.form.get("remove_avatar") == "on"
-        form_data = {
-            "first_name": first_name,
-            "last_name": last_name or "",
-            "email": email_raw,
-            "age": age_raw,
-            "goals": goals or "",
-            "target_cefr_level": target_cefr_level or "",
-            "target_grade": target_grade or "",
-            "target_trimester": target_trimester_raw or "",
-            "interests": interests or "",
-            "role": role,
-        }
-        selected_domains = request.form.getlist("preferred_domains")
-
-        if role not in {"student", "parent", "admin"}:
-            flash("Rôle invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if role != "student":
-            age_raw = ""
-            goals = None
-            target_cefr_level = None
-            target_grade = None
-            target_trimester_raw = ""
-            interests = None
-            preferred_domains = None
-
-        current_user_obj = _current_user()
-        if current_user_obj.id == target.id and role != "admin":
-            flash("Vous ne pouvez pas retirer votre propre rôle d'administrateur.", "warning")
-            return _render(form_data, selected_domains)
-
-        if not validate_name(first_name):
-            flash("Le prénom contient des caractères invalides ou est trop long.", "danger")
-            return _render(form_data, selected_domains)
-
-        if last_name and not validate_name(last_name):
-            flash("Le nom de famille contient des caractères invalides ou est trop long.", "danger")
-            return _render(form_data, selected_domains)
-
-        if not validate_email(email_raw):
-            flash("L'adresse e-mail n'est pas valide.", "danger")
-            return _render(form_data, selected_domains)
-
-        conflict = Student.query.filter(
-            Student.email == email_raw, Student.id != target.id
-        ).first()
-        if conflict:
-            flash("Cette adresse e-mail est déjà utilisée.", "danger")
-            return _render(form_data, selected_domains)
-
-        if password:
-            password_valid, password_message = validate_password(password)
-            if not password_valid:
-                flash(password_message, "danger")
-                return _render(form_data, selected_domains)
-            if password != password_confirm:
-                flash("La confirmation du mot de passe ne correspond pas.", "danger")
-                return _render(form_data, selected_domains)
-
-        age_value = validate_age(age_raw)
-        if age_raw and age_value is None:
-            flash("L'âge doit être un nombre valide entre 3 et 120 ans.", "danger")
-            return _render(form_data, selected_domains)
-
-        if goals and not validate_goals(goals):
-            flash("Les objectifs contiennent du contenu invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if target_cefr_level and target_cefr_level not in cefr_levels:
-            flash("Le niveau CECRL est invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        if target_grade and target_grade not in grade_levels:
-            flash("Le niveau scolaire est invalide.", "danger")
-            return _render(form_data, selected_domains)
-
-        target_trimester = None
-        if target_trimester_raw:
-            try:
-                target_trimester = int(target_trimester_raw)
-            except ValueError:
-                flash("Le trimestre est invalide.", "danger")
-                return _render(form_data, selected_domains)
-            if target_trimester not in trimester_choices:
-                flash("Le trimestre est invalide.", "danger")
-                return _render(form_data, selected_domains)
-
-        avatar_file = request.files.get("avatar")
-        new_avatar_filename: Optional[str] = None
-        if avatar_file and avatar_file.filename:
-            if not _validate_image_file(avatar_file):
-                flash("Format d'image non pris en charge ou fichier invalide.", "danger")
-                return _render(form_data, selected_domains)
-            sanitized = secure_filename(avatar_file.filename)
-            extension = sanitized.rsplit(".", 1)[-1].lower() if "." in sanitized else ""
-            new_avatar_filename = f"{uuid4().hex}.{extension}"
-            avatar_file.save(Path(current_app.config["UPLOAD_FOLDER"]) / new_avatar_filename)
-
-        if remove_avatar and target.avatar_filename:
-            _delete_avatar_file(target.avatar_filename)
-            target.avatar_filename = None
-
-        if new_avatar_filename:
-            if target.avatar_filename:
-                _delete_avatar_file(target.avatar_filename)
-            target.avatar_filename = new_avatar_filename
-
-        target.first_name = first_name
-        target.last_name = last_name
-        target.email = email_raw
-        target.age = age_value
-        target.goals = goals
-        target.target_cefr_level = target_cefr_level
-        target.target_grade = target_grade
-        target.target_trimester = target_trimester
-        target.interests = interests
-        target.preferred_domains = preferred_domains or None
-        target.role = role
-        if password:
-            target.set_password(password)
-        db.session.commit()
+        try:
+            update_user_from_form(
+                target,
+                request.form,
+                request.files,
+                role_choice_allowed=True,
+                current_user=_current_user(),
+                cefr_levels=cefr_levels,
+                grade_levels=grade_levels,
+                trimester_choices=trimester_choices,
+                accept_inline_password=True,
+            )
+        except UserFormError as exc:
+            flash(exc.message, "danger")
+            return _render(exc.form_data, exc.selected_domains)
         flash("Compte mis à jour.", "success")
         return redirect(url_for("admin.admin_users"))
 
