@@ -4,7 +4,7 @@
   <div class="card">
     <h2>{{ prompt.display_name }}</h2>
     <p class="muted">
-      <a href="{{ url_for('main.admin_openai_prompts') }}">← Liste des prompts</a>
+      <a href="{{ url_for('admin.admin_openai_prompts') }}">← Liste des prompts</a>
       · <code>{{ prompt.prompt_key }}</code>
     </p>
 
@@ -42,12 +42,12 @@
 
       <div class="actions">
         <button class="btn btn-primary" type="submit">Enregistrer</button>
-        <a class="btn btn-secondary" href="{{ url_for('main.admin_openai_prompts') }}">Annuler</a>
+        <a class="btn btn-secondary" href="{{ url_for('admin.admin_openai_prompts') }}">Annuler</a>
       </div>
     </form>
 
     {% if is_default_known %}
-      <form method="post" action="{{ url_for('main.admin_openai_prompt_reset', prompt_key=prompt.prompt_key) }}" style="margin-top: 1rem;">
+      <form method="post" action="{{ url_for('admin.admin_openai_prompt_reset', prompt_key=prompt.prompt_key) }}" style="margin-top: 1rem;">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <button
           class="btn btn-danger"

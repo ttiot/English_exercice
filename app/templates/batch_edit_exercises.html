@@ -7,7 +7,7 @@
   <a class="btn btn-secondary" href="{{ back_url }}">← Retour</a>
 </div>
 
-<form method="post" action="{{ url_for('main.batch_save_exercises') }}">
+<form method="post" action="{{ url_for('parents.batch_save_exercises') }}">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <input type="hidden" name="back_url" value="{{ back_url | e }}" />
 

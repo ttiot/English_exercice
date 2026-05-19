@@ -6,21 +6,14 @@ from pathlib import Path
 from typing import Iterator
 
 from flask import Flask, g
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
-from flask_sqlalchemy import SQLAlchemy
-from flask_migrate import Migrate
-from flask_wtf import CSRFProtect
 from flask_wtf.csrf import generate_csrf
 from sqlalchemy import event
 from sqlalchemy.engine import Engine
 
 from .config import Config
+from .extensions import csrf, db, limiter, migrate
 
-db = SQLAlchemy()
-migrate = Migrate()
-csrf = CSRFProtect()
-limiter = Limiter(key_func=get_remote_address, default_limits=[])
+__all__ = ["create_app", "csrf", "db", "limiter", "migrate"]
 
 
 @contextmanager
@@ -70,9 +63,10 @@ def create_app():
         ensure_admin_account,
         ensure_schema_migrations,
     )
-    from .routes import bp as main_bp, _load_user_from_session
+    from .blueprints import register_blueprints
+    from .services.auth import _load_user_from_session, require_login
 
-    app.register_blueprint(main_bp)
+    register_blueprints(app)
 
     # --- SQLite PRAGMA au connect (WAL, etc.) ---
     @event.listens_for(Engine, "connect")
@@ -133,6 +127,10 @@ def create_app():
     @app.before_request
     def load_current_user():
         g.current_user = _load_user_from_session()
+
+    # --- Garde globale d'authentification (redirige vers /login si non connecté) ---
+    # L'ordre importe : load_current_user pose g.current_user, require_login le lit.
+    app.before_request(require_login)
 
     @app.context_processor
     def inject_globals():

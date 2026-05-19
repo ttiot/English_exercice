@@ -74,7 +74,7 @@
       <input id="time_limit" name="time_limit" type="number" min="0" placeholder="Ex. 15" />
 
       <button class="btn btn-primary" type="submit">Commencer</button>
-      <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">Annuler</a>
+      <a class="btn btn-secondary" href="{{ url_for('students.view_student', student_id=student.id) }}">Annuler</a>
     </form>
   </div>
 {% endblock %}

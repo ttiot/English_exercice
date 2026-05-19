@@ -69,23 +69,23 @@
   <div class="card">
     <h3>Sections</h3>
     <div class="hub-grid">
-      <a class="hub-tile" href="{{ url_for('main.admin_openai_config') }}">
+      <a class="hub-tile" href="{{ url_for('admin.admin_openai_config') }}">
         <h4>Configuration</h4>
         <p class="muted">Clé API, modèle par défaut, base URL, plafond budget.</p>
       </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_openai_prompts') }}">
+      <a class="hub-tile" href="{{ url_for('admin.admin_openai_prompts') }}">
         <h4>Prompts</h4>
         <p class="muted">Éditer les prompts système / utilisateur envoyés à OpenAI.</p>
       </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_openai_logs') }}">
+      <a class="hub-tile" href="{{ url_for('admin.admin_openai_logs') }}">
         <h4>Logs des appels</h4>
         <p class="muted">Historique paginé : tokens, coût, durée, prompts envoyés.</p>
       </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_openai_statistics') }}">
+      <a class="hub-tile" href="{{ url_for('admin.admin_openai_statistics') }}">
         <h4>Statistiques</h4>
         <p class="muted">Trend 12 mois, taux de succès, top élèves, latence.</p>
       </a>
-      <a class="hub-tile" href="{{ url_for('main.admin_openai_budget') }}">
+      <a class="hub-tile" href="{{ url_for('admin.admin_openai_budget') }}">
         <h4>Budget</h4>
         <p class="muted">Consommation mois en cours et 3 derniers mois par type d'appel.</p>
       </a>

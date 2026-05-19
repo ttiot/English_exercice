@@ -9,17 +9,17 @@
     </p>
     {% if current_user %}
       <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Tableau de bord</a>
+        <a class="btn btn-secondary" href="{{ url_for('parents.parent_dashboard') }}">Tableau de bord</a>
         {% if current_user.is_parent() or current_user.is_admin() %}
-          <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Ajouter un compte élève</a>
+          <a class="btn btn-primary" href="{{ url_for('students.create_student') }}">Ajouter un compte élève</a>
         {% else %}
-          <a class="btn btn-primary" href="{{ url_for('main.view_student', student_id=current_user.id) }}">Voir mon profil</a>
+          <a class="btn btn-primary" href="{{ url_for('students.view_student', student_id=current_user.id) }}">Voir mon profil</a>
         {% endif %}
       </div>
     {% else %}
       <div style="margin-top: 1.5rem; display: flex; gap: 1rem; flex-wrap: wrap;">
-        <a class="btn btn-secondary" href="{{ url_for('main.login') }}">Connexion</a>
-        <a class="btn btn-primary" href="{{ url_for('main.register') }}">Créer un compte élève</a>
+        <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">Connexion</a>
+        <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Créer un compte élève</a>
       </div>
     {% endif %}
   </section>
@@ -30,7 +30,7 @@
       <div class="student-grid">
         {% for student in students %}
           {% set role_label = {'student': 'élève', 'parent': 'parent', 'admin': 'admin'} %}
-          <a class="student-card" href="{{ url_for('main.view_student', student_id=student.id) }}">
+          <a class="student-card" href="{{ url_for('students.view_student', student_id=student.id) }}">
             <div class="student-avatar">
               <img src="{{ url_for('static', filename=student.avatar_url()) }}" alt="Avatar de {{ student.full_name() }}" />
             </div>

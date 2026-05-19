@@ -18,6 +18,7 @@ from typing import Optional
 
 from .. import db
 from ..models import AICallLog, SessionTranslationLog, WordTranslation
+from . import ai_analytics
 from .ai_generator import _SYSTEM_PROMPT_TRANSLATION, get_openai_client
 
 logger = logging.getLogger(__name__)
@@ -159,7 +160,7 @@ def translate_word(
         input_tokens = getattr(usage, "input_tokens", 0) if usage else 0
         output_tokens = getattr(usage, "output_tokens", 0) if usage else 0
 
-        AICallLog.log_call(
+        ai_analytics.log_call(
             student_id,
             call_type="word_translation",
             model=info["model"],
@@ -210,7 +211,7 @@ def translate_word(
     except Exception as exc:  # noqa: BLE001
         duration_ms = int((time.monotonic() - start) * 1000)
         logger.warning("Erreur traduction IA pour %r : %s", word, exc)
-        AICallLog.log_call(
+        ai_analytics.log_call(
             student_id,
             call_type="word_translation",
             model=info["model"],

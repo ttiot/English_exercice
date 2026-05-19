@@ -21,7 +21,7 @@
     <form method="post" style="margin-top: 1.5rem;">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <button class="btn btn-danger" type="submit">Confirmer la suppression</button>
-      <a class="btn btn-secondary" href="{{ url_for('main.admin_users') }}">Annuler</a>
+      <a class="btn btn-secondary" href="{{ url_for('admin.admin_users') }}">Annuler</a>
     </form>
   </div>
 {% endblock %}

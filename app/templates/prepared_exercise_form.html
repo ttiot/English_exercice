@@ -7,7 +7,7 @@
         <h2>Créer un exercice préparé</h2>
         <p class="muted">Ajoutez autant de questions que nécessaire et choisissez si l'exercice est chronométré.</p>
       </div>
-      <a class="btn btn-secondary" href="{{ url_for('main.parent_dashboard') }}">Retour</a>
+      <a class="btn btn-secondary" href="{{ url_for('parents.parent_dashboard') }}">Retour</a>
     </div>
     <form method="post" id="prepared-exercise-form">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />

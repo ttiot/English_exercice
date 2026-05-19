@@ -12,7 +12,7 @@
     {% if session.get('original_admin_id') %}
     <div class="impersonation-banner">
       <span>Mode impersonnification — vous agissez en tant que <strong>{{ current_user.full_name() }}</strong></span>
-      <form method="post" action="{{ url_for('main.stop_impersonation') }}" class="inline-form inline-form-compact">
+      <form method="post" action="{{ url_for('admin.stop_impersonation') }}" class="inline-form inline-form-compact">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
         <button class="btn btn-small btn-danger" type="submit">Arrêter</button>
       </form>
@@ -24,22 +24,22 @@
     </div>
     <nav class="navbar">
       <div class="navbar-top">
-        <h1><a href="{{ url_for('main.index') }}">English Explorer</a></h1>
+        <h1><a href="{{ url_for('auth.index') }}">English Explorer</a></h1>
         <div class="navbar-top-actions">
           {% if current_user %}
             <span class="navbar-hello">Bonjour {{ current_user.full_name() | e }}</span>
             {% if current_user.is_parent() or current_user.is_admin() %}
-              <a class="btn btn-primary" href="{{ url_for('main.create_student') }}">Créer un profil élève</a>
+              <a class="btn btn-primary" href="{{ url_for('students.create_student') }}">Créer un profil élève</a>
             {% else %}
-              <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=current_user.id) }}">Mon profil</a>
+              <a class="btn btn-secondary" href="{{ url_for('students.view_student', student_id=current_user.id) }}">Mon profil</a>
             {% endif %}
-            <form class="inline-form inline-form-compact" method="post" action="{{ url_for('main.logout') }}">
+            <form class="inline-form inline-form-compact" method="post" action="{{ url_for('auth.logout') }}">
               <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
               <button class="btn btn-secondary" type="submit">Déconnexion</button>
             </form>
           {% else %}
-            <a class="btn btn-secondary" href="{{ url_for('main.login') }}">Connexion</a>
-            <a class="btn btn-primary" href="{{ url_for('main.register') }}">Créer un compte</a>
+            <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">Connexion</a>
+            <a class="btn btn-primary" href="{{ url_for('auth.register') }}">Créer un compte</a>
           {% endif %}
         </div>
       </div>
@@ -50,9 +50,9 @@
             Espace Parents <span class="dropdown-arrow">▾</span>
           </span>
           <div class="nav-dropdown-menu">
-            <a class="nav-dropdown-item" href="{{ url_for('main.parent_dashboard') }}">Suivi des élèves</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.exercise_bank') }}">Banque d'exercices</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.list_all_exercises') }}">Gestionnaire d'exercices</a>
+            <a class="nav-dropdown-item" href="{{ url_for('parents.parent_dashboard') }}">Suivi des élèves</a>
+            <a class="nav-dropdown-item" href="{{ url_for('exercise_bank.exercise_bank') }}">Banque d'exercices</a>
+            <a class="nav-dropdown-item" href="{{ url_for('parents.list_all_exercises') }}">Gestionnaire d'exercices</a>
           </div>
         </div>
         {% if current_user.is_admin() %}
@@ -61,9 +61,9 @@
             Administration <span class="dropdown-arrow">▾</span>
           </span>
           <div class="nav-dropdown-menu">
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_openai_hub') }}">Intelligence Artificielle</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_config_hub') }}">Configuration</a>
-            <a class="nav-dropdown-item" href="{{ url_for('main.admin_users') }}">Utilisateurs</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_openai_hub') }}">Intelligence Artificielle</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_config_hub') }}">Configuration</a>
+            <a class="nav-dropdown-item" href="{{ url_for('admin.admin_users') }}">Utilisateurs</a>
           </div>
         </div>
         {% endif %}

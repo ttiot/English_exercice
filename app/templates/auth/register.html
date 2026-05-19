@@ -5,7 +5,7 @@
   <div class="card auth-card">
     <h2>Créer un compte élève</h2>
     <p class="muted">Remplis ce formulaire pour accéder aux exercices personnalisés.</p>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('main.register') }}">
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('auth.register') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <label for="first_name">Prénom *</label>
       <input id="first_name" name="first_name" required placeholder="Ex. Léa" />
@@ -24,7 +24,7 @@
       <label for="password_confirm">Confirmer le mot de passe *</label>
       <input id="password_confirm" name="password_confirm" type="password" minlength="8" required autocomplete="new-password" />
       <button class="btn btn-primary" type="submit">Créer mon compte</button>
-      <a class="btn btn-secondary" href="{{ url_for('main.login') }}">J'ai déjà un compte</a>
+      <a class="btn btn-secondary" href="{{ url_for('auth.login') }}">J'ai déjà un compte</a>
     </form>
   </div>
   </div>

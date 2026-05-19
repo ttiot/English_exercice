@@ -123,7 +123,7 @@
   {{ super() }}
   <script>
     (function () {
-      const AUTOSAVE_URL = "{{ url_for('main.autosave_session', session_id=session_obj.id) }}";
+      const AUTOSAVE_URL = "{{ url_for('sessions.autosave_session', session_id=session_obj.id) }}";
       const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
       const statusEl = document.getElementById('autosave-status');
       const form = document.getElementById('session-form');
@@ -213,7 +213,7 @@
   {% endif %}
   <script>
     (function () {
-      const TRANSLATE_URL = "{{ url_for('main.translate_word_api') }}";
+      const TRANSLATE_URL = "{{ url_for('api.translate_word_api') }}";
       const SESSION_ID = {{ session_obj.id }};
       const CSRF_TOKEN = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
       const tooltip = document.getElementById('translate-tooltip');

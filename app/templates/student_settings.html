@@ -4,7 +4,7 @@
   <div class="card">
     <h2>Modifier les informations de l'élève</h2>
     <p class="muted">Mettez à jour le prénom, la photo et les objectifs pédagogiques.</p>
-    <form method="post" enctype="multipart/form-data" action="{{ url_for('main.manage_student', student_id=student.id) }}">
+    <form method="post" enctype="multipart/form-data" action="{{ url_for('students.manage_student', student_id=student.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="action" value="profile" />
 
@@ -82,7 +82,7 @@
 
       <div class="form-actions">
         <button class="btn btn-primary" type="submit">Enregistrer les modifications</button>
-        <a class="btn btn-secondary" href="{{ url_for('main.view_student', student_id=student.id) }}">Retour</a>
+        <a class="btn btn-secondary" href="{{ url_for('students.view_student', student_id=student.id) }}">Retour</a>
       </div>
     </form>
   </div>
@@ -90,7 +90,7 @@
   <div class="card">
     <h2>Changer le mot de passe</h2>
     <p class="muted">Choisissez un mot de passe fort pour protéger l'accès au compte.</p>
-    <form method="post" action="{{ url_for('main.manage_student', student_id=student.id) }}">
+    <form method="post" action="{{ url_for('students.manage_student', student_id=student.id) }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
       <input type="hidden" name="action" value="password" />
 

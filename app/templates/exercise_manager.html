@@ -67,13 +67,13 @@
 
       <div style="display:flex; gap:0.5rem;">
         <button class="btn btn-primary btn-small" type="submit">Filtrer</button>
-        <a class="btn btn-secondary btn-small" href="{{ url_for('main.list_all_exercises') }}">Réinitialiser</a>
+        <a class="btn btn-secondary btn-small" href="{{ url_for('parents.list_all_exercises') }}">Réinitialiser</a>
       </div>
     </div>
   </form>
 </div>
 
-<form method="post" action="{{ url_for('main.batch_edit_exercises') }}" id="bulk-form">
+<form method="post" action="{{ url_for('parents.batch_edit_exercises') }}" id="bulk-form">
   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
   <input type="hidden" name="type" value="{{ filter_type | e }}" />
   <input type="hidden" name="q" value="{{ filter_q | e }}" />
@@ -148,7 +148,7 @@
               <a href="{{ item.edit_url }}" class="btn btn-small btn-secondary" style="font-size:0.75rem; padding:0.2rem 0.7rem;">Modifier</a>
               {% if item.type == 'bank' %}
                 <form class="inline-form" method="post"
-                      action="{{ url_for('main.toggle_exercise_item_active', item_id=item.id) }}"
+                      action="{{ url_for('parents.toggle_exercise_item_active', item_id=item.id) }}"
                       style="display:inline; margin-left:0.25rem;">
                   <input type="hidden" name="csrf_token" value="{{ csrf_token() }}" />
                   <button class="btn btn-small btn-secondary" type="submit" style="font-size:0.75rem; padding:0.2rem 0.7rem;">
@@ -178,11 +178,11 @@
   } %}
   <div style="display:flex; gap:1rem; align-items:center; flex-wrap:wrap;">
     {% if page > 1 %}
-      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises', page=page-1, **base_args) }}">← Précédent</a>
+      <a class="btn btn-secondary" href="{{ url_for('parents.list_all_exercises', page=page-1, **base_args) }}">← Précédent</a>
     {% endif %}
     <span class="muted">Page {{ page }} / {{ total_pages }}</span>
     {% if page < total_pages %}
-      <a class="btn btn-secondary" href="{{ url_for('main.list_all_exercises', page=page+1, **base_args) }}">Suivant →</a>
+      <a class="btn btn-secondary" href="{{ url_for('parents.list_all_exercises', page=page+1, **base_args) }}">Suivant →</a>
     {% endif %}
   </div>
 </div>

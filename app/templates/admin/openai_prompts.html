@@ -4,7 +4,7 @@
   <div class="card">
     <h2>Prompts OpenAI</h2>
     <p class="muted">
-      <a href="{{ url_for('main.admin_openai_hub') }}">← Intelligence Artificielle</a>
+      <a href="{{ url_for('admin.admin_openai_hub') }}">← Intelligence Artificielle</a>
     </p>
     <p>
       Ces prompts sont chargés à chaque appel. Toute modification est prise en
@@ -14,7 +14,7 @@
 
     <div class="hub-grid">
       {% for prompt in prompts %}
-        <a class="hub-tile" href="{{ url_for('main.admin_openai_prompt_edit', prompt_key=prompt.prompt_key) }}">
+        <a class="hub-tile" href="{{ url_for('admin.admin_openai_prompt_edit', prompt_key=prompt.prompt_key) }}">
           <h4>{{ prompt.display_name }}</h4>
           <code class="muted">{{ prompt.prompt_key }}</code>
           {% if prompt.description %}
