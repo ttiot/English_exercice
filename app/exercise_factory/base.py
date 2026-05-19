@@ -28,6 +28,7 @@ class ExercisePrompt:
     question_type: str = "text"
     options: Tuple[str, ...] = field(default_factory=tuple)
     accepted_answers: Tuple[str, ...] = field(default_factory=tuple)
+    explanation: str = ""
 
 
 @dataclass(frozen=True)

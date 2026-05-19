@@ -530,8 +530,9 @@
   margin-bottom: 0.75rem;
   background: var(--glass-bg);
 }
-.correction-item--ok  { border-color: rgba(46,213,115,0.35); background: rgba(46,213,115,0.04); }
-.correction-item--nok { border-color: rgba(255,71,87,0.35);  background: rgba(255,71,87,0.04);  }
+.correction-item--ok   { border-color: rgba(46,213,115,0.35);  background: rgba(46,213,115,0.04);  }
+.correction-item--nok  { border-color: rgba(255,71,87,0.35);   background: rgba(255,71,87,0.04);   }
+.correction-item--warn { border-color: rgba(255,165,0,0.40);   background: rgba(255,165,0,0.06);   }
 .correction-item__header {
   display: flex;
   align-items: center;
@@ -546,6 +547,17 @@
 .correction-answer { font-size: 0.9rem; }
 .correction-answer--wrong strong { color: var(--accent-red); text-decoration: line-through; }
 .correction-answer--correct strong { color: var(--accent-green); }
+.correction-answer--near-miss strong { color: var(--accent-warning, #ffa502); }
+.correction-answer--near-miss-hint { font-size: 0.9rem; color: var(--accent-warning, #ffa502); }
+.correction-answer--near-miss-hint strong { color: inherit; }
+.correction-item__explanation {
+  margin-top: 0.5rem;
+  font-size: 0.85rem;
+  color: var(--muted, #888);
+  border-left: 3px solid var(--accent-cyan, #0ea5e9);
+  padding-left: 0.75rem;
+  font-style: italic;
+}
 
 /* ── Responsive gamification ── */
 @media (max-width: 700px) {

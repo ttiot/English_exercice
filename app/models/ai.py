@@ -147,6 +147,7 @@ class AIGeneratedExercise(db.Model, TimestampMixin):
     question_type = db.Column(db.String(20), nullable=False, default="text")
     options_json = db.Column(db.Text, nullable=True)
     accepted_answers_json = db.Column(db.Text, nullable=True)
+    explanation = db.Column(db.Text, nullable=True)
     difficulty = db.Column(db.String(20), nullable=False, default="beginner", index=True)
     model_used = db.Column(db.String(100), nullable=True)
     student_id = db.Column(
