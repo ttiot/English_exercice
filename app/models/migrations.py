@@ -305,6 +305,36 @@ def ensure_schema_migrations() -> None:
                 text("ALTER TABLE session_exercises ADD COLUMN ai_exercise_id INTEGER")
             )
             needs_commit = True
+        if "explanation" not in session_ex_columns:
+            db.session.execute(
+                text("ALTER TABLE session_exercises ADD COLUMN explanation TEXT")
+            )
+            needs_commit = True
+        if "correction_status" not in session_ex_columns:
+            db.session.execute(
+                text(
+                    "ALTER TABLE session_exercises ADD COLUMN correction_status "
+                    "VARCHAR(20) DEFAULT 'incorrect'"
+                )
+            )
+            db.session.execute(
+                text(
+                    "UPDATE session_exercises SET correction_status = "
+                    "CASE WHEN is_correct = 1 THEN 'correct' ELSE 'incorrect' END "
+                    "WHERE correction_status IS NULL OR correction_status = 'incorrect'"
+                )
+            )
+            needs_commit = True
+
+    if "ai_generated_exercises" in table_names:
+        ai_ex_columns = {
+            column["name"] for column in inspector.get_columns("ai_generated_exercises")
+        }
+        if "explanation" not in ai_ex_columns:
+            db.session.execute(
+                text("ALTER TABLE ai_generated_exercises ADD COLUMN explanation TEXT")
+            )
+            needs_commit = True
 
     if "parent_student" not in table_names:
         db.session.execute(

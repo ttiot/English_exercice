@@ -25,7 +25,7 @@ from ...models import (
     SessionTranslationLog,
     StudentBadge,
 )
-from ...services.answer_validation import _is_answer_correct
+from ...services.answer_validation import _check_answer_status
 from ...services.auth import _current_user, _login_required
 from ...services.gamification import (
     DIFFICULTY_XP,
@@ -65,7 +65,9 @@ def play_session(session_id: int):
             answer_key = f"answer_{exercise.id}"
             user_answer = request.form.get(answer_key, "").strip()
             exercise.student_answer = user_answer
-            exercise.is_correct = _is_answer_correct(exercise)
+            status, _ = _check_answer_status(exercise)
+            exercise.correction_status = status
+            exercise.is_correct = status != "incorrect"
             if exercise.is_correct:
                 correct_answers += 1
         session_obj.completed_at = datetime.utcnow()

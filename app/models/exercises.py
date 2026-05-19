@@ -56,6 +56,10 @@ class SessionExercise(db.Model, TimestampMixin):
     options_json = db.Column(db.Text, nullable=True)
     # Liste JSON de variantes de réponse acceptées en plus de `correct_answer`.
     accepted_answers_json = db.Column(db.Text, nullable=True)
+    # Explication pédagogique courte (fournie par l'IA), affichée en correction.
+    explanation = db.Column(db.Text, nullable=True)
+    # Statut fin de correction : 'correct', 'near_miss' ou 'incorrect'.
+    correction_status = db.Column(db.String(20), nullable=False, default="incorrect")
     # Origine de l'exercice : 'procedural', 'ai', 'prepared'.
     source = db.Column(db.String(20), nullable=False, default="procedural")
     # FK optionnelle vers le pool d'exercices IA (pour la traçabilité).

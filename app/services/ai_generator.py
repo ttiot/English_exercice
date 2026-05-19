@@ -53,6 +53,7 @@ EXERCISE_BATCH_SCHEMA = {
                     "question_type",
                     "options",
                     "accepted_answers",
+                    "explanation",
                 ],
                 "properties": {
                     "prompt": {
@@ -97,6 +98,14 @@ EXERCISE_BATCH_SCHEMA = {
                             "aucune."
                         ),
                     },
+                    "explanation": {
+                        "type": "string",
+                        "description": (
+                            "Courte explication pédagogique en français (1-2 phrases) "
+                            "expliquant la règle de grammaire ou de vocabulaire utilisée. "
+                            "Affichée à l'élève uniquement en cas de mauvaise réponse."
+                        ),
+                    },
                 },
             },
         }
@@ -130,6 +139,8 @@ saisira sa réponse en s'aidant de la banque.
 seulement si aucune catégorie ne convient.
 - Toujours inclure `accepted_answers` (peut être []), notamment pour les \
 traductions où plusieurs formulations sont valides.
+- Toujours inclure `explanation` : une courte règle pédagogique en français \
+(1-2 phrases max) expliquant pourquoi c'est la bonne réponse. Ne jamais laisser vide.
 - Pas d'emoji, pas de markdown, pas de commentaire en dehors du JSON.
 
 Catégories disponibles : {categories}.
@@ -291,6 +302,7 @@ def _coerce_exercise(raw: dict) -> Optional[ExercisePrompt]:
     question_type = (raw.get("question_type") or "text").strip()
     options = raw.get("options") or []
     accepted = raw.get("accepted_answers") or []
+    explanation = (raw.get("explanation") or "").strip()
 
     if not prompt or not answer:
         return None
@@ -321,6 +333,7 @@ def _coerce_exercise(raw: dict) -> Optional[ExercisePrompt]:
         question_type=question_type,
         options=tuple(options_clean),
         accepted_answers=tuple(accepted_clean),
+        explanation=explanation,
     )
 
 
@@ -348,6 +361,7 @@ def _persist_pool_entries(
                 if ex.accepted_answers
                 else None
             ),
+            explanation=ex.explanation or None,
             difficulty=difficulty,
             model_used=model_used,
             student_id=student_id,
