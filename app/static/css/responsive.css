@@ -550,6 +550,8 @@
 .correction-answer--near-miss strong { color: var(--accent-warning, #ffa502); }
 .correction-answer--near-miss-hint { font-size: 0.9rem; color: var(--accent-warning, #ffa502); }
 .correction-answer--near-miss-hint strong { color: inherit; }
+.correction-answer--article-hint { font-size: 0.9rem; color: var(--accent-cyan, #0ea5e9); }
+.correction-answer--article-hint strong { color: inherit; }
 .correction-item__explanation {
   margin-top: 0.5rem;
   font-size: 0.85rem;

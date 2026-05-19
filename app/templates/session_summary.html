@@ -174,7 +174,7 @@
     {% for exercise in session_obj.exercises %}
     {% set status = exercise.correction_status or ('correct' if exercise.is_correct else 'incorrect') %}
     <div
-        class="correction-item {% if status == 'correct' %}correction-item--ok{% elif status == 'near_miss' %}correction-item--warn{% else %}correction-item--nok{% endif %}"
+        class="correction-item {% if status in ('correct', 'article_missing') %}correction-item--ok{% elif status == 'near_miss' %}correction-item--warn{% else %}correction-item--nok{% endif %}"
     >
         <div class="correction-item__header">
             <span class="correction-item__num">Q{{ loop.index }}</span>
@@ -184,6 +184,8 @@
             >
             <span class="correction-item__result">
                 {%- if status == 'correct' -%}
+                    ✅ Bravo !
+                {%- elif status == 'article_missing' -%}
                     ✅ Bravo !
                 {%- elif status == 'near_miss' -%}
                     ⚠️ Presque !
@@ -240,7 +242,11 @@
                     >{{ exercise.student_answer or 'Non renseignée' }}</strong
                 >
             </span>
-            {% if status == 'near_miss' %}
+            {% if status == 'article_missing' %}
+            <span class="correction-answer correction-answer--article-hint">
+                💡 Pense au déterminant : <strong>{{ exercise.correct_answer }}</strong>
+            </span>
+            {% elif status == 'near_miss' %}
             <span class="correction-answer correction-answer--near-miss-hint">
                 ⚠️ Attention à l'orthographe : <strong>{{ exercise.correct_answer }}</strong>
             </span>

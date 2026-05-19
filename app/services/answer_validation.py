@@ -25,6 +25,8 @@ from ..models import SessionExercise
 
 
 _ARTICLE_RE = re.compile(r"^(?:a|an|the)\s+")
+# Déterminants français (articles définis, indéfinis, partitifs) — du plus long au plus court.
+_FR_DET_RE = re.compile(r"^(?:de\s+l[''`]|de\s+la|du|des|le|la|les|l[''`]|un|une)\s+", re.IGNORECASE)
 
 # Formes contractées → développées (toutes en minuscules, apostrophe droite)
 _CONTRACTIONS: dict = {
@@ -115,6 +117,10 @@ def _strip_article(text: str) -> str:
     return _ARTICLE_RE.sub("", text)
 
 
+def _strip_french_det(text: str) -> str:
+    return _FR_DET_RE.sub("", text)
+
+
 def _prompt_has_blank(prompt: str) -> bool:
     if not prompt:
         return False
@@ -161,10 +167,13 @@ def _accepted_answers(exercise: SessionExercise) -> List[str]:
 
 
 def _check_answer_status(exercise: SessionExercise) -> Tuple[str, Optional[str]]:
-    """Renvoie ``(statut, meilleure_réponse_attendue)`` où statut ∈ {correct, near_miss, incorrect}.
+    """Renvoie ``(statut, meilleure_réponse_attendue)``.
 
-    ``meilleure_réponse_attendue`` est la réponse candidate la plus proche
-    (utile pour afficher l'orthographe correcte en cas de near_miss).
+    Statuts possibles :
+    - ``'correct'``        : réponse exacte.
+    - ``'near_miss'``      : faute d'orthographe isolée (Levenshtein = 1).
+    - ``'article_missing'``: bonne traduction mais déterminant français omis.
+    - ``'incorrect'``      : réponse fausse.
     """
     user_answer = exercise.student_answer or ""
     candidates = _accepted_answers(exercise)
@@ -238,6 +247,20 @@ def _check_answer_status(exercise: SessionExercise) -> Tuple[str, Optional[str]]
                     ):
                         return "correct", answer
 
+    # ── Déterminant français manquant (catégories de traduction vers le français)
+    # Appliqué AVANT near_miss pour éviter qu'une faute d'article soit traitée
+    # comme une faute d'orthographe.
+    fr_target_categories = {"translate_en_fr", "sentence_en_fr"}
+    if exercise.category in fr_target_categories:
+        stripped_actual_fr = _strip_french_det(strict_actual)
+        for answer in candidates:
+            norm_exp = _normalize_answer(answer, loose=False)
+            stripped_exp_fr = _strip_french_det(norm_exp)
+            # Les deux côtés correspondent après suppression du déterminant,
+            # ET l'attendu avait bien un déterminant (sinon c'est juste faux).
+            if stripped_actual_fr == stripped_exp_fr and norm_exp != stripped_exp_fr:
+                return "article_missing", answer
+
     # ── Near-miss (Levenshtein = 1, exercices non-QCM) ──────────────────────
     if question_type != "mcq":
         best_dist = None
@@ -263,7 +286,7 @@ def _check_answer_status(exercise: SessionExercise) -> Tuple[str, Optional[str]]
 
 
 def _is_answer_correct(exercise: SessionExercise) -> bool:
-    """Rétro-compatibilité : True si correct ou near_miss."""
+    """Rétro-compatibilité : True si correct, near_miss ou article_missing."""
     status, _ = _check_answer_status(exercise)
     return status != "incorrect"
 
