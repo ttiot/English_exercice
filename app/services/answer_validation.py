@@ -238,8 +238,8 @@ def _check_answer_status(exercise: SessionExercise) -> Tuple[str, Optional[str]]
                     ):
                         return "correct", answer
 
-    # ── Near-miss (Levenshtein = 1, exercices textuels non-à-trou) ──────────
-    if not has_blank and question_type != "mcq":
+    # ── Near-miss (Levenshtein = 1, exercices non-QCM) ──────────────────────
+    if question_type != "mcq":
         best_dist = None
         best_candidate = None
         for answer in candidates:
